@@ -148,12 +148,8 @@ pub(crate) fn is_less_than_6144<F: PrimeField>(
 ) -> Result<Boolean<F>, SynthesisError> {
     let a_val = a.value()?;
 
-    // suppressing this check so that unit test can test
-    // bad paths
-    #[cfg(not(test))]
-    if a_val >= F::from(6144u64) {
-        panic!("Invalid input: {}", a_val);
-    }
+    // Note that the function returns a boolean and
+    // the input a is allowed to be larger than 6144
 
     let a_bits = a_val.into_repr().to_bits_le();
     // a_bit_vars is the least 14 bits of a

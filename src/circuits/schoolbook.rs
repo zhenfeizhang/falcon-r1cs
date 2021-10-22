@@ -4,13 +4,19 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result};
 use falcon_rust::*;
 
-pub struct FalconNTTVerificationCircuit {
+pub struct FalconSchoolBookVerificationCircuit {
     pk: PublicKey,
     msg: String,
     sig: Signature,
 }
 
-impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
+impl FalconSchoolBookVerificationCircuit {
+    pub fn build_circuit(pk: PublicKey, msg: String, sig: Signature) -> Self {
+        Self { pk, msg, sig }
+    }
+}
+
+impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCircuit {
     /// generate a circuit proving that for a given tuple: pk, msg, sig
     /// the following statement holds
     /// - hm = hash_message(message, nonce)     <- done in public
@@ -25,8 +31,8 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // compute related data in the clear
         // ========================================
         let hm = hash_message(self.msg.as_bytes(), self.sig.nonce());
-        // compute v = hm - uh and lift it to positives
-        let uh = poly_mul(&pk_poly, &sig_poly);
+        // compute v = hm + uh and lift it to positives
+        let uh = schoolbook_mul(&pk_poly, &sig_poly);
         let mut v_pos = [0i16; 512];
 
         for (c, (&a, &b)) in v_pos.iter_mut().zip(uh.iter().zip(hm.iter())) {
@@ -66,24 +72,20 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         let mut pk_poly_vars = Vec::new();
         let mut neg_pk_poly_vars = Vec::new();
         for e in pk_poly {
-            // ensure all the pk inputs are smaller than 12289
-            // pk is public input, does not need to keep secret
+            // do not need to ensure the pk inputs are smaller than 12289
+            // pk is public input, so the verifier can check in the clear
             let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(e)))?;
-            enforce_less_than_12289(cs.clone(), &tmp)?;
             // It is implied that all the neg_pk inputs are smaller than 12289
             neg_pk_poly_vars.push(&const_12289_var - &tmp);
-
             pk_poly_vars.push(tmp);
         }
 
         // hash of message
         let mut hm_vars = Vec::new();
         for e in hm.iter() {
-            // ensure all the hm inputs are smaller than 12289
+            // do not need to ensure the hm inputs are smaller than 12289
             // hm is public input, does not need to keep secret
-            let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?;
-            enforce_less_than_12289(cs.clone(), &tmp)?;
-            hm_vars.push(tmp);
+            hm_vars.push(FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?);
         }
 
         // v with positive coefficients
@@ -102,13 +104,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // we are proving the polynomial congruence via
         // a school-bool vector-matrix multiplication.
         //
-        // Two alternative approaches are
-        // * FFT -- which itself requires one vector-matrix multiplication.
-        // * Karatsuba -- which takes less multiplications but more additions,
-        // and additions are also costly in our circuits representation.
         //
-        // We will look into those options later.
-
         // build buffer = [-pk[0], -pk[1], ..., -pk[511], pk[0], pk[1], ..., pk[511]]
         let mut buf_poly_poly_vars = [neg_pk_poly_vars, pk_poly_vars].concat();
         buf_poly_poly_vars.reverse();
@@ -150,7 +146,7 @@ mod tests {
     use ark_ed_on_bls12_381::fq::Fq;
     use ark_relations::r1cs::ConstraintSystem;
     #[test]
-    fn test_ntt_r1cs() {
+    fn test_schoolbook_verification_r1cs() {
         let keypair = KeyPair::keygen(9);
         let message = "testing message";
         let sig = keypair
@@ -160,11 +156,11 @@ mod tests {
         assert!(keypair.public_key.verify(message.as_ref(), &sig));
         assert!(keypair
             .public_key
-            .verify_rust_native(message.as_ref(), &sig));
+            .verify_rust_native_schoolbook(message.as_ref(), &sig));
 
         let cs = ConstraintSystem::<Fq>::new_ref();
 
-        let falcon_circuit = FalconNTTVerificationCircuit {
+        let falcon_circuit = FalconSchoolBookVerificationCircuit {
             pk: keypair.public_key,
             msg: message.to_string(),
             sig,

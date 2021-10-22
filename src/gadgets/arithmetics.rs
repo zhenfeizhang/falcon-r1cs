@@ -89,13 +89,57 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
     Ok(c_var)
 }
 
+/// Generate the variable b = a mod 12289;
+/// Cost: 30 constraints
+#[allow(dead_code)]
+pub(crate) fn mod_q<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+    modulus_var: &FpVar<F>,
+) -> Result<FpVar<F>, SynthesisError> {
+    // we want to prove that `b = a mod 12289`
+    // that is
+    // (1) a - t * 12289 = b
+    // for some unknown t, with
+    // (2) b < 12289
+    //
+    // Note that this implementation assumes the
+    // native field's order is greater than 12289^2
+    // so we do not have any overflows
+
+    // rebuild the field elements
+    let a_val = a.value()?;
+    let a_int: BigUint = a_val.into();
+
+    let modulus_int: BigUint = F::from(12289u64).into();
+    let t_int = &a_int / &modulus_int;
+    let b_int = &a_int % &modulus_int;
+
+    let t_val = F::from(t_int);
+    let b_val = F::from(b_int);
+
+    // cast the variables
+    let t_var = FpVar::<F>::new_witness(cs.clone(), || Ok(t_val))?;
+    let b_var = FpVar::<F>::new_witness(cs.clone(), || Ok(b_val))?;
+
+    // (1) a - t * 12289 = c
+    let t_12289 = t_var * modulus_var;
+    let left = a - t_12289;
+    left.enforce_equal(&b_var)?;
+
+    // (2) c < 12289
+    enforce_less_than_12289(cs, &b_var)?;
+
+    Ok(b_var)
+}
+
 /// Generate the variable c = a * b mod 12289;
 /// with a guarantee that the inputs a and b satisfies:
 /// * a < 12289
 /// * b < 12289
 /// Cost: 30 constraints
 #[allow(dead_code)]
-fn mul_mod<F: PrimeField>(
+pub(crate) fn mul_mod<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
     b: &FpVar<F>,
@@ -140,12 +184,152 @@ fn mul_mod<F: PrimeField>(
     Ok(c_var)
 }
 
+/// Generate the variable c = a + b mod 12289;
+/// Cost: 30 constraints
+#[allow(dead_code)]
+pub(crate) fn add_mod<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+    b: &FpVar<F>,
+    modulus_var: &FpVar<F>,
+) -> Result<FpVar<F>, SynthesisError> {
+    // we want to prove that `c = a + b mod 12289`
+    // that is
+    // (1) a + b - t * 12289 = c
+    // for some t in {0, 1}, with
+    // (2) c < 12289
+
+    // rebuild the field elements
+    let a_val = a.value()?;
+    let b_val = b.value()?;
+    let ab_val = a_val + b_val;
+    let ab_int: BigUint = ab_val.into();
+
+    let modulus_int: BigUint = F::from(12289u64).into();
+    let c_int = &ab_int % &modulus_int;
+    let t_int = (&ab_int - &c_int) / &modulus_int;
+
+    let t_val = F::from(t_int);
+    let c_val = F::from(c_int);
+
+    // cast the variables
+    let t_var = FpVar::<F>::new_witness(cs.clone(), || Ok(t_val))?;
+    let c_var = FpVar::<F>::new_witness(cs.clone(), || Ok(c_val))?;
+
+    // (1) a + b - t * 12289 = c
+    let ab_var = a + b;
+    let t_12289 = t_var * modulus_var;
+    let left = ab_var - t_12289;
+    left.enforce_equal(&c_var)?;
+
+    // (2) c < 12289
+    enforce_less_than_12289(cs, &c_var)?;
+
+    Ok(c_var)
+}
+
+/// Generate the variable c = a - b mod 12289;
+/// Requires
+///     a < 12289
+/// Cost: 31 constraints
+#[allow(dead_code)]
+pub(crate) fn sub_mod<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+    b: &FpVar<F>,
+    modulus_var: &FpVar<F>,
+) -> Result<FpVar<F>, SynthesisError> {
+    // we want to prove that `c = a - b mod 12289`
+    // that is b + c = a mod 12289
+
+    // rebuild the field elements
+    let a_val = a.value()?;
+    let b_val = b.value()?;
+    let a_int: BigUint = a_val.into();
+    let b_int: BigUint = b_val.into();
+    let modulus_int: BigUint = F::from(12289u64).into();
+    let b_mod_12289_int = &b_int % &modulus_int;
+    let c_int = (&a_int + &modulus_int - &b_mod_12289_int) % &modulus_int;
+
+    let c_val = F::from(c_int);
+    let c_var = FpVar::<F>::new_witness(cs.clone(), || Ok(c_val))?;
+
+    a.enforce_equal(&add_mod(cs, b, &c_var, modulus_var)?)?;
+
+    Ok(c_var)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ark_ed_on_bls12_381::fq::Fq;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng, UniformRand};
+
+    macro_rules! test_mod_q {
+        ($a:expr, $b:expr, $satisfied:expr) => {
+            let cs = ConstraintSystem::<Fq>::new_ref();
+            let a = Fq::from($a);
+            let b = Fq::from($b);
+
+            let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
+            let const_12289_var =
+                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289u16)).unwrap();
+
+            let num_instance_variables = cs.num_instance_variables();
+            let num_witness_variables = cs.num_witness_variables();
+            let num_constraints = cs.num_constraints();
+
+            let b_var = mod_q(cs.clone(), &a_var, &const_12289_var).unwrap();
+            println!(
+                "number of variables {} {} and constraints {}\n",
+                cs.num_instance_variables() - num_instance_variables,
+                cs.num_witness_variables() - num_witness_variables,
+                cs.num_constraints() - num_constraints,
+            );
+
+            let b_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(b)).unwrap();
+            b_var.enforce_equal(&b_var2).unwrap();
+            assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
+
+            assert_eq!(b_var.value().unwrap() == b, $satisfied,);
+        };
+    }
+
+    #[test]
+    fn test_mod_q() {
+        // =======================
+        // good path
+        // =======================
+        // the meaning of life
+        test_mod_q!(6, 6, true);
+
+        // edge case: 0
+        test_mod_q!(0, 0, true);
+        test_mod_q!(12289, 0, true);
+
+        // edge case: wraparound
+        test_mod_q!(12290, 1, true);
+
+        // =======================
+        // bad path
+        // =======================
+        // wrong value
+        test_mod_q!(6, 7, false);
+        test_mod_q!(5, 12288, false);
+
+        // =======================
+        // random path
+        // =======================
+        let mut rng = test_rng();
+        for _ in 0..1000 {
+            let t = rng.gen_range(0..1 << 30);
+
+            test_mod_q!(t, t % 12289, true);
+            test_mod_q!(t, (t + 1) % 12289, false);
+        }
+        // assert!(false)
+    }
 
     macro_rules! test_mul_mod {
         ($a:expr, $b:expr, $c:expr, $satisfied:expr) => {
@@ -210,6 +394,152 @@ mod tests {
         // assert!(false)
     }
 
+    macro_rules! test_add_mod {
+        ($a:expr, $b:expr, $c:expr, $satisfied:expr) => {
+            let cs = ConstraintSystem::<Fq>::new_ref();
+            let a = Fq::from($a);
+            let b = Fq::from($b);
+            let c = Fq::from($c);
+
+            let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
+            let b_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(b)).unwrap();
+            let const_12289_var =
+                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289u16)).unwrap();
+
+            let num_instance_variables = cs.num_instance_variables();
+            let num_witness_variables = cs.num_witness_variables();
+            let num_constraints = cs.num_constraints();
+
+            let c_var = add_mod(cs.clone(), &a_var, &b_var, &const_12289_var).unwrap();
+            println!(
+                "number of variables {} {} and constraints {}\n",
+                cs.num_instance_variables() - num_instance_variables,
+                cs.num_witness_variables() - num_witness_variables,
+                cs.num_constraints() - num_constraints,
+            );
+
+            let c_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(c)).unwrap();
+            c_var.enforce_equal(&c_var2).unwrap();
+            assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
+
+            assert_eq!(
+                c_var.value().unwrap() == c,
+                $satisfied,
+                "c_var: {}\nc: {}",
+                c_var.value().unwrap().into_repr(),
+                c.into_repr()
+            );
+        };
+    }
+
+    #[test]
+    fn test_add_mod() {
+        // =======================
+        // good path
+        // =======================
+        // the meaning of life
+        test_add_mod!(6, 36, 42, true);
+
+        // edge case: 0
+        test_add_mod!(0, 100, 100, true);
+        test_add_mod!(100, 0, 100, true);
+
+        // edge case: wraparound
+        test_add_mod!(5, 12288, 4, true);
+
+        // =======================
+        // bad path
+        // =======================
+        // wrong value
+        test_add_mod!(6, 7, 41, false);
+        test_add_mod!(5, 12288, 3, false);
+
+        // =======================
+        // random path
+        // =======================
+        let mut rng = test_rng();
+        for _ in 0..1000 {
+            let t1 = rng.gen_range(0..1 << 30);
+            let t2 = rng.gen_range(0..1 << 30);
+            test_add_mod!(t1, t2, (t1 + t2) % 12289, true);
+            test_add_mod!(t1, t2, (t1 + t2 + 1) % 12289, false);
+        }
+        // assert!(false)
+    }
+
+    macro_rules! test_sub_mod {
+        ($a:expr, $b:expr, $c:expr, $satisfied:expr) => {
+            let cs = ConstraintSystem::<Fq>::new_ref();
+            let a = Fq::from($a);
+            let b = Fq::from($b);
+            let c = Fq::from($c);
+
+            let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
+            let b_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(b)).unwrap();
+            let const_12289_var =
+                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289u16)).unwrap();
+
+            let num_instance_variables = cs.num_instance_variables();
+            let num_witness_variables = cs.num_witness_variables();
+            let num_constraints = cs.num_constraints();
+
+            let c_var = sub_mod(cs.clone(), &a_var, &b_var, &const_12289_var).unwrap();
+            println!(
+                "number of variables {} {} and constraints {}\n",
+                cs.num_instance_variables() - num_instance_variables,
+                cs.num_witness_variables() - num_witness_variables,
+                cs.num_constraints() - num_constraints,
+            );
+
+            let c_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(c)).unwrap();
+            c_var.enforce_equal(&c_var2).unwrap();
+            assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
+
+            assert_eq!(
+                c_var.value().unwrap() == c,
+                $satisfied,
+                "c_var: {}\nc: {}",
+                c_var.value().unwrap().into_repr(),
+                c.into_repr()
+            );
+        };
+    }
+
+    #[test]
+    fn test_sub_mod() {
+        // =======================
+        // good path
+        // =======================
+        // the meaning of life
+        test_sub_mod!(78, 36, 42, true);
+
+        // edge case: 0
+        test_sub_mod!(0, 0, 0, true);
+        test_sub_mod!(100, 0, 100, true);
+
+        // edge case: wraparound
+        test_sub_mod!(0, 100, 12189, true);
+
+        // =======================
+        // bad path
+        // =======================
+        // wrong value
+        test_sub_mod!(6, 7, 41, false);
+        test_sub_mod!(5, 12288, 3, false);
+
+        // =======================
+        // random path
+        // =======================
+        let mut rng = test_rng();
+        for _ in 0..1000 {
+            let t1 = rng.gen_range(0..12289);
+            let t2 = rng.gen_range(0..1 << 30);
+
+            test_sub_mod!(t1, t2, ((t1 - t2) % 12289 + 12289) % 12289, true);
+            test_sub_mod!(t1, t2, ((t1 - t2 + 1) % 12289 + 12289) % 12289, false);
+        }
+        // assert!(false)
+    }
     fn inner_product(a: &[Fq], b: &[Fq]) -> Fq {
         let mut res = a[0] * b[0];
         for (&a_i, &b_i) in a.iter().zip(b.iter()).skip(1) {

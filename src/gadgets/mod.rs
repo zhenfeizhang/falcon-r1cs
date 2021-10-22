@@ -1,9 +1,9 @@
 mod arithmetics;
 mod misc;
-mod range_proofs;
 mod ntt;
+mod range_proofs;
 
 pub(crate) use arithmetics::*;
 pub(crate) use misc::*;
+pub use ntt::*;
 pub(crate) use range_proofs::*;
-pub(crate) use ntt::*;

@@ -1,3 +1,5 @@
+mod circuits;
 mod gadgets;
-mod ntt;
-mod schoolbook;
+
+pub use circuits::{FalconNTTVerificationCircuit, FalconSchoolBookVerificationCircuit};
+pub use gadgets::*;

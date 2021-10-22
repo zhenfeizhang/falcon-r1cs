@@ -4,13 +4,19 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result};
 use falcon_rust::*;
 
-pub struct FalconSchoolBookVerificationCircuit {
+pub struct FalconNTTVerificationCircuit {
     pk: PublicKey,
     msg: String,
     sig: Signature,
 }
 
-impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCircuit {
+impl FalconNTTVerificationCircuit {
+    pub fn build_circuit(pk: PublicKey, msg: String, sig: Signature) -> Self {
+        Self { pk, msg, sig }
+    }
+}
+
+impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
     /// generate a circuit proving that for a given tuple: pk, msg, sig
     /// the following statement holds
     /// - hm = hash_message(message, nonce)     <- done in public
@@ -20,15 +26,19 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
         let sig_poly = self.sig.unpack();
         let pk_poly = self.pk.unpack();
         let const_12289_var = FpVar::<F>::new_constant(cs.clone(), F::from(12289u16))?;
+        let param_var = ntt_param_var(cs.clone()).unwrap();
 
         // ========================================
         // compute related data in the clear
         // ========================================
         let hm = hash_message(self.msg.as_bytes(), self.sig.nonce());
-        // compute v = hm - uh and lift it to positives
-        let uh = poly_mul(&pk_poly, &sig_poly);
-        let mut v_pos = [0i16; 512];
+        let hm_u32: Vec<u32> = hm.iter().map(|x| *x as u32).collect();
+        let hm_ntt = ntt(&hm_u32);
 
+        // compute v = hm + uh and lift it to positives
+        let uh = schoolbook_mul(&pk_poly, &sig_poly);
+
+        let mut v_pos = [0i16; 512];
         for (c, (&a, &b)) in v_pos.iter_mut().zip(uh.iter().zip(hm.iter())) {
             let c_i32 = (b as i32) + (a as i32);
             *c = (c_i32 % 12289) as i16;
@@ -38,6 +48,30 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
             }
         }
 
+        let pk_u32: Vec<u32> = pk_poly.iter().map(|x| *x as u32).collect();
+        let pk_ntt = ntt(&pk_u32);
+
+        // sanity check
+        #[cfg(debug_assertion)]
+        {
+            let v_pos_u32: Vec<u32> = v_pos.iter().map(|x| *x as u32).collect();
+            let sig_u32: Vec<u32> = sig_poly
+                .iter()
+                .map(|x| ((*x + 12289) % 12289) as u32)
+                .collect();
+            let sig_ntt = ntt(&sig_u32);
+            let v_ntt = ntt(&v_pos_u32);
+
+            let uh_u32: Vec<u32> = uh.iter().map(|x| ((*x + 12289) % 12289) as u32).collect();
+            let uh_ntt = ntt(&uh_u32);
+
+            for i in 0..512 {
+                // uh + hash(m) = v
+                assert_eq!((uh_ntt[i] + hm_ntt[i]) % 12289, v_ntt[i]);
+                // uh = pk * sig
+                assert_eq!((pk_ntt[i] * sig_ntt[i]) % 12289, uh_ntt[i]);
+            }
+        }
         // ========================================
         // allocate the variables with range checks
         // ========================================
@@ -57,33 +91,22 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
             // enforce_less_than_12289(cs.clone(), &tmp)?;
             sig_poly_vars.push(tmp);
         }
-
-        // pk
+        // pk, in the NTT form
         //
-        // here we use a buffer = [-pk[0], -pk[1], ..., -pk[511], pk[0], pk[1], ...,
-        // pk[511]] where the buffer[i+1..i+513].reverse() will be used for the i-th
-        // column in inner-product calculation
-        let mut pk_poly_vars = Vec::new();
-        let mut neg_pk_poly_vars = Vec::new();
-        for e in pk_poly {
-            // ensure all the pk inputs are smaller than 12289
-            // pk is public input, does not need to keep secret
-            let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(e)))?;
-            enforce_less_than_12289(cs.clone(), &tmp)?;
-            // It is implied that all the neg_pk inputs are smaller than 12289
-            neg_pk_poly_vars.push(&const_12289_var - &tmp);
-
-            pk_poly_vars.push(tmp);
+        let mut pk_ntt_vars = Vec::new();
+        for e in pk_ntt {
+            // do not need to ensure the pk inputs are smaller than 12289
+            // pk is public input, so the verifier can check in the clear
+            pk_ntt_vars.push(FpVar::<F>::new_input(cs.clone(), || Ok(F::from(e)))?);
         }
 
-        // hash of message
-        let mut hm_vars = Vec::new();
-        for e in hm.iter() {
-            // ensure all the hm inputs are smaller than 12289
+        // hash of message in the NTT format
+        // public input
+        let mut hm_ntt_vars = Vec::new();
+        for e in hm_ntt.iter() {
+            // do not need to ensure the hm inputs are smaller than 12289
             // hm is public input, does not need to keep secret
-            let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?;
-            enforce_less_than_12289(cs.clone(), &tmp)?;
-            hm_vars.push(tmp);
+            hm_ntt_vars.push(FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?);
         }
 
         // v with positive coefficients
@@ -95,40 +118,37 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
             enforce_less_than_12289(cs.clone(), &tmp)?;
             v_pos_vars.push(tmp);
         }
-
         // ========================================
         // proving v = hm + sig * pk mod 12289
         // ========================================
-        // we are proving the polynomial congruence via
-        // a school-bool vector-matrix multiplication.
+        // we are proving the polynomial congruence via NTT.
         //
-        // Two alternative approaches are
-        // * FFT -- which itself requires one vector-matrix multiplication.
-        // * Karatsuba -- which takes less multiplications but more additions,
-        // and additions are also costly in our circuits representation.
-        //
-        // We will look into those options later.
 
-        // build buffer = [-pk[0], -pk[1], ..., -pk[511], pk[0], pk[1], ..., pk[511]]
-        let mut buf_poly_poly_vars = [neg_pk_poly_vars, pk_poly_vars].concat();
-        buf_poly_poly_vars.reverse();
+        // first, prove that the circuit variable are indeed the
+        // NTT representation of the polynomial
+        //  sig_ntt_vars = ntt_circuit(sig_vars)
+        //  v_ntt_vars = ntt_circuit(v_vars)
+        let sig_ntt_vars = ntt_circuit(cs.clone(), &sig_poly_vars, &const_12289_var, &param_var)?;
+        let v_ntt_vars = ntt_circuit(cs.clone(), &v_pos_vars, &const_12289_var, &param_var)?;
 
+        // second, prove the equation holds in the ntt domain
         for i in 0..512 {
-            // current_col = sig * pk[i]
-            let current_col = inner_product_mod(
+            // v[i] = hm[i] + sig[i] * pk[i] % 12289
+
+            // println!(
+            //     "{:?} {:?} {:?} {:?}",
+            //     v_ntt_vars[i].value()?.into_repr(),
+            //     hm_ntt_vars[i].value()?.into_repr(),
+            //     sig_ntt_vars[i].value()?.into_repr(),
+            //     pk_ntt_vars[i].value()?.into_repr(),
+            // );
+
+            v_ntt_vars[i].enforce_equal(&add_mod(
                 cs.clone(),
-                sig_poly_vars.as_ref(),
-                buf_poly_poly_vars[511 - i..1023 - i].as_ref(),
+                &hm_ntt_vars[i],
+                &(&sig_ntt_vars[i] * &pk_ntt_vars[i]),
                 &const_12289_var,
-            )?;
-
-            // right = hm + sig * pk[i]
-            let rhs = &hm_vars[i] + &current_col;
-
-            // v = rhs mod 12289
-            (((&rhs).is_eq(&v_pos_vars[i])?)
-                .or(&(&rhs).is_eq(&(&v_pos_vars[i] + &const_12289_var))?)?)
-            .enforce_equal(&Boolean::TRUE)?;
+            )?)?;
         }
 
         // ========================================
@@ -150,7 +170,7 @@ mod tests {
     use ark_ed_on_bls12_381::fq::Fq;
     use ark_relations::r1cs::ConstraintSystem;
     #[test]
-    fn test_schoolbook_r1cs() {
+    fn test_ntt_verification_r1cs() {
         let keypair = KeyPair::keygen(9);
         let message = "testing message";
         let sig = keypair
@@ -160,11 +180,14 @@ mod tests {
         assert!(keypair.public_key.verify(message.as_ref(), &sig));
         assert!(keypair
             .public_key
-            .verify_rust_native(message.as_ref(), &sig));
+            .verify_rust_native_schoolbook(message.as_ref(), &sig));
+        assert!(keypair
+            .public_key
+            .verify_rust_native_ntt(message.as_ref(), &sig));
 
         let cs = ConstraintSystem::<Fq>::new_ref();
 
-        let falcon_circuit = FalconSchoolBookVerificationCircuit {
+        let falcon_circuit = FalconNTTVerificationCircuit {
             pk: keypair.public_key,
             msg: message.to_string(),
             sig,
