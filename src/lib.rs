@@ -2,10 +2,7 @@ mod constants;
 // mod errors;
 mod gadgets;
 
-use crate::gadgets::{
-    enforce_less_than_12289, enforce_less_than_norm_bound, inner_product_mod, l2_norm_var,
-};
-use ark_ed_on_bls12_381::constraints::FqVar;
+use crate::gadgets::*;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result};
@@ -55,7 +52,13 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
             let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(e)))?;
 
             // ensure all the sig inputs are smaller than 12289
-            enforce_less_than_12289(cs.clone(), &tmp)?;
+            // Note that this step is not necessary: we will be checking
+            // the l2-norm of \|sig | v\| < 34034726. If any
+            // coefficient of sig is greater than 12289, we will have
+            // a l2-norm that is at least > 12289^2 which is greater
+            // than 34034726 and cause the circuit to be unsatisfied.
+            //
+            // enforce_less_than_12289(cs.clone(), &tmp)?;
             sig_poly_vars.push(tmp);
         }
 
@@ -178,6 +181,6 @@ mod tests {
         );
 
         assert!(cs.is_satisfied().unwrap());
-        assert!(false)
+        // assert!(false)
     }
 }
