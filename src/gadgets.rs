@@ -1,18 +1,6 @@
-use crate::errors::FalconR1CSError;
-use ark_crypto_primitives::{
-    commitment::pedersen::Randomness,
-    prf::{blake2s::constraints::Blake2sGadget, PRFGadget},
-    CommitmentGadget, PathVar,
-};
-use ark_ed_on_bls12_381::{EdwardsProjective, Fq, Fr};
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
-use ark_relations::{
-    ns,
-    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Field, SynthesisError, ToConstraintField},
-};
-use ark_serialize::CanonicalDeserialize;
-use falcon_rust::*;
+use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use num_bigint::BigUint;
 
 /// Generate the variables c = a * B mod 12289;
@@ -20,6 +8,7 @@ use num_bigint::BigUint;
 /// * a is a dim n vector with a_i < 12289
 /// * b is an n-by-m matrix with b_ij < 12289
 /// Cost: (29 + a.len())*b.row() constraints
+#[allow(dead_code)]
 pub(crate) fn vector_matrix_mul_mod<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &[FpVar<F>],
@@ -94,7 +83,7 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
     left.enforce_equal(&c_var)?;
 
     // (2) c < 12289
-    is_less_than_12289(cs, &c_var)?;
+    enforce_less_than_12289(cs, &c_var)?;
 
     Ok(c_var)
 }
@@ -104,6 +93,7 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
 /// * a < 12289
 /// * b < 12289
 /// Cost: 30 constraints
+#[allow(dead_code)]
 fn mul_mod<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: FpVar<F>,
@@ -145,7 +135,7 @@ fn mul_mod<F: PrimeField>(
     left.enforce_equal(&c_var)?;
 
     // (2) c < 12289
-    is_less_than_12289(cs, &c_var)?;
+    enforce_less_than_12289(cs, &c_var)?;
 
     Ok(c_var)
 }
@@ -153,7 +143,7 @@ fn mul_mod<F: PrimeField>(
 /// Constraint that the witness of a is smaller than 12289
 /// Cost: 28 constraints.
 /// (This improves the range proof of 1264 constraints as in Arkworks.)
-pub(crate) fn is_less_than_12289<F: PrimeField>(
+pub(crate) fn enforce_less_than_12289<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
 ) -> Result<(), SynthesisError> {
@@ -178,7 +168,7 @@ pub(crate) fn is_less_than_12289<F: PrimeField>(
         .collect::<Result<Vec<_>, _>>()?;
 
     // ensure that a_bits are the bit decomposition of a
-    is_decompose(a, a_bit_vars.as_ref())?;
+    enforce_decompose(a, a_bit_vars.as_ref())?;
 
     // argue that a < 12289 = 2^13 + 2^12 + 1 via the following:
     // if a[13] == 0 return true
@@ -198,8 +188,98 @@ pub(crate) fn is_less_than_12289<F: PrimeField>(
     Ok(())
 }
 
+/// Constraint that the witness of a is smaller than 34034726
+/// Cost: TBD constraints.
+/// (This improves the range proof of 1264 constraints as in Arkworks.)
+pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+) -> Result<(), SynthesisError> {
+    // the norm bound is 0b10000001110101010000100110 which is 26 bits, i.e.,
+    // 2^25 + 2^18 + 2^17 + 2^16 + 2^14 + 2^ 12 + 2^10 + 2^5 + 2^2 + 2
+
+    let a_val = a.value()?;
+
+    let a_bits = a_val.into_repr().to_bits_le();
+    // a_bit_vars is the least 26 bits of a
+    // (we only care for the first 26 bits of a_bits)
+    let a_bit_vars = a_bits
+        .iter()
+        .take(26)
+        .map(|x| Boolean::new_witness(cs.clone(), || Ok(x)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // ensure that a_bits are the bit decomposition of a
+    enforce_decompose(a, a_bit_vars.as_ref())?;
+
+    // argue that a < 0b10000001110101010000100110  via the following:
+    // // if a[25] == 0 return true
+    // // else if
+    // //    a[19..24] == 0  and a[13] == 1 && a[12] == 0 return true
+    // // else if a[13] == 1 && a[12] == 1, a[11] && a[10] && ... && a[0] == 0
+    // return // true else return false
+
+    // // a[13] == 0
+    // (a_bit_vars[13].not())
+    //     // a[12] == 0
+    //     .or(&a_bit_vars[12]
+    //         .not()
+    //         // a[11]^2 + ... a[0]^2 == 0
+    //         .or(&Boolean::kary_or(a_bit_vars[0..11].as_ref())?.not())?)?
+    //     .enforce_equal(&Boolean::TRUE)?;
+
+    Ok(())
+}
+
+/// Return a variable indicating if the input is less than 6144 or not
+/// Cost: TBD constraints.
+/// (This improves the range proof of XXX constraints as in Arkworks.)
+pub(crate) fn is_less_than_6144<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+) -> Result<Boolean<F>, SynthesisError> {
+    let a_val = a.value()?;
+
+    // suppressing this check so that unit test can test
+    // bad paths
+    //
+    // if a_val >= F::from(12289u64) {
+    //     return Err(FalconR1CSError::InvalidParameters(
+    //         format!("Invalid input: {}", a_val).to_string(),
+    //     ));
+    // }
+
+    let a_bits = a_val.into_repr().to_bits_le();
+    // a_bit_vars is the least 14 bits of a
+    // (we only care for the first 14 bits of a_bits)
+    let a_bit_vars = a_bits
+        .iter()
+        .take(14)
+        .map(|x| Boolean::new_witness(cs.clone(), || Ok(x)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // ensure that a_bits are the bit decomposition of a
+    enforce_decompose(a, a_bit_vars.as_ref())?;
+
+    // argue that a < 6144 = 2^12 + 2^11 via the following:
+    // a[13] == 0 and
+    // either a[12] == 0 or a[11] == 0
+
+    // a[13] == 0
+    (a_bit_vars[13].not())
+        // a[12] == 0
+        .and(&a_bit_vars[12]
+            .not()
+            // a[11] == 0
+            .or(&a_bit_vars[11].not())?)?
+        .is_eq(&Boolean::TRUE)
+}
+
 /// Constraint that a = bits[0] + 2 bits[1] + 2^2 bits[2] ...
-fn is_decompose<F: PrimeField>(a: &FpVar<F>, bits: &[Boolean<F>]) -> Result<(), SynthesisError> {
+fn enforce_decompose<F: PrimeField>(
+    a: &FpVar<F>,
+    bits: &[Boolean<F>],
+) -> Result<(), SynthesisError> {
     if bits.len() == 0 {
         panic!("Invalid input length: {}", bits.len());
     }
@@ -213,14 +293,85 @@ fn is_decompose<F: PrimeField>(a: &FpVar<F>, bits: &[Boolean<F>]) -> Result<(), 
     Ok(())
 }
 
+// compute the l2 norm of vector a where a's coefficients
+// are positive between [0, 12289).
+// We need to firstly lift it to [-6144, 6144) and then
+// compute the norm.
+pub(crate) fn l2_norm_var<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    input: &[FpVar<F>],
+) -> Result<FpVar<F>, SynthesisError> {
+    let const_12289_var = FpVar::<F>::new_constant(cs.clone(), F::from(12289u16))?;
+
+    let mut res = FpVar::<F>::conditionally_select(
+        &is_less_than_6144(cs.clone(), &input[0])?,
+        &input[0],
+        &(&const_12289_var - &input[0]),
+    )?;
+    res = &res * &res;
+    for e in input.iter().skip(1) {
+        let tmp = FpVar::<F>::conditionally_select(
+            &is_less_than_6144(cs.clone(), e)?,
+            e,
+            &(&const_12289_var - e),
+        )?;
+        res += &tmp * &tmp
+    }
+
+    Ok(res)
+}
+
+// Turns out the following gadget is more costly than
+// simply use `is_eq()`, LOL.
+//
+// /// Generate the variable fpr a ?= b;
+// /// with a guarantee that the inputs a and b satisfies:
+// /// * a < 12289 * 2
+// /// * b < 12289 * 2
+// /// Cost: TBD constraints
+// pub(crate) fn is_equal<F: PrimeField>(
+//     cs: ConstraintSystemRef<F>,
+//     a: &FpVar<F>,
+//     b: &FpVar<F>,
+// ) -> Result<Boolean<F>, SynthesisError> {
+//     let a_val = a.value()?;
+//     let b_val = b.value()?;
+//     let a_bits = a_val.into_repr().to_bits_le();
+//     let b_bits = b_val.into_repr().to_bits_le();
+//     // a_bit_vars is the least 15 bits of a
+//     // (we only care for the first 15 bits of a_bits)
+//     let a_bit_vars = a_bits
+//         .iter()
+//         .take(15)
+//         .map(|x| Boolean::new_witness(cs.clone(), || Ok(x)))
+//         .collect::<Result<Vec<_>, _>>()?;
+//     // b_bit_vars is the least 15 bits of b
+//     // (we only care for the first 15 bits of b_bits)
+//     let b_bit_vars = b_bits
+//         .iter()
+//         .take(15)
+//         .map(|x| Boolean::new_witness(cs.clone(), || Ok(x)))
+//         .collect::<Result<Vec<_>, _>>()?;
+//     enforce_decompose(a, a_bit_vars.as_ref())?;
+//     enforce_decompose(b, b_bit_vars.as_ref())?;
+//
+//     // a == b if
+//     // * a[i] == b[i] for i in [0..14], and
+//     let a_i_is_eq_b_i = a_bit_vars
+//         .iter()
+//         .zip(b_bit_vars.iter())
+//         .map(|(a_i, b_i)| a_i.is_eq(b_i))
+//         .collect::<Result<Vec<_>, _>>()?;
+//
+//     Boolean::kary_and(a_i_is_eq_b_i.as_ref())
+// }
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_relations::r1cs::{
-        ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError,
-    };
+    use ark_ed_on_bls12_381::fq::Fq;
+    use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng, UniformRand};
-    use std::cmp::Ordering;
 
     macro_rules! test_range_proof {
         ($value: expr, $satisfied: expr) => {
@@ -228,7 +379,7 @@ mod tests {
             let a = Fq::from($value);
             let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
 
-            is_less_than_12289(cs.clone(), &a_var).unwrap();
+            enforce_less_than_12289(cs.clone(), &a_var).unwrap();
             assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
             println!(
                 "number of variables {} {} and constraints {}\n",
@@ -316,6 +467,67 @@ mod tests {
             );
         };
     }
+
+    macro_rules! test_range_proof_6144 {
+        ($value: expr, $satisfied: expr) => {
+            let cs = ConstraintSystem::<Fq>::new_ref();
+            let a = Fq::from($value);
+            let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
+
+            let is_less = is_less_than_6144(cs.clone(), &a_var).unwrap();
+            is_less.enforce_equal(&Boolean::TRUE).unwrap();
+            assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
+            println!(
+                "number of variables {} {} and constraints {}\n",
+                cs.num_instance_variables(),
+                cs.num_witness_variables(),
+                cs.num_constraints(),
+            );
+        };
+    }
+    #[test]
+    fn test_range_proof_6144() {
+        // =======================
+        // good path
+        // =======================
+        // the meaning of life
+        test_range_proof_6144!(42, true);
+
+        // edge case: 0
+        test_range_proof_6144!(0, true);
+
+        // edge case: 6143
+        test_range_proof_6144!(6143, true);
+
+        // =======================
+        // bad path
+        // =======================
+        // edge case: 6144
+        test_range_proof_6144!(6144, false);
+
+        // edge case: 6145
+        test_range_proof_6144!(6145, false);
+
+        // edge case: 12289
+        test_range_proof_6144!(12289, false);
+
+        // // the following code prints out the
+        // // cost for arkworks native range proof
+        // let cs = ConstraintSystem::<Fq>::new_ref();
+        // let a = Fq::from(42);
+        // let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
+        // let b_var = FpVar::<Fq>::new_constant(cs.clone(),
+        // Fq::from(12289)).unwrap(); a_var.enforce_cmp(&b_var,Ordering:
+        // :Less, false).unwrap(); println!(
+        //     "number of variables {} {} and constraints {}\n",
+        //     cs.num_instance_variables(),
+        //     cs.num_witness_variables(),
+        //     cs.num_constraints(),
+        // );
+
+        // assert!(false)
+    }
+
     #[test]
     fn test_mul_mod() {
         // =======================

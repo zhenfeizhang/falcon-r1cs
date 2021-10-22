@@ -1,26 +1,15 @@
 mod constants;
-mod errors;
+// mod errors;
 mod gadgets;
 
-use crate::gadgets::{inner_product_mod, is_less_than_12289};
-use ark_crypto_primitives::{
-    commitment::pedersen::Randomness,
-    prf::{blake2s::constraints::Blake2sGadget, PRFGadget},
-    CommitmentGadget, PathVar,
+use crate::gadgets::{
+    enforce_less_than_12289, enforce_less_than_norm_bound, inner_product_mod, l2_norm_var,
 };
-use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsProjective, Fq, Fr};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ed_on_bls12_381::constraints::FqVar;
+use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
-use ark_relations::{
-    ns,
-    r1cs::{
-        ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, Field, Result,
-        SynthesisError, ToConstraintField,
-    },
-};
-use ark_serialize::CanonicalDeserialize;
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result};
 use falcon_rust::*;
-use num_bigint::BigUint;
 
 pub struct FalconVerificationCircuit {
     pk: PublicKey,
@@ -66,7 +55,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
             let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(e)))?;
 
             // ensure all the sig inputs are smaller than 12289
-            is_less_than_12289(cs.clone(), &tmp)?;
+            enforce_less_than_12289(cs.clone(), &tmp)?;
             sig_poly_vars.push(tmp);
         }
 
@@ -81,7 +70,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
             // ensure all the pk inputs are smaller than 12289
             // pk is public input, does not need to keep secret
             let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(e)))?;
-            is_less_than_12289(cs.clone(), &tmp)?;
+            enforce_less_than_12289(cs.clone(), &tmp)?;
             // It is implied that all the neg_pk inputs are smaller than 12289
             neg_pk_poly_vars.push(&const_12289_var - &tmp);
 
@@ -94,7 +83,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
             // ensure all the hm inputs are smaller than 12289
             // hm is public input, does not need to keep secret
             let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?;
-            is_less_than_12289(cs.clone(), &tmp)?;
+            enforce_less_than_12289(cs.clone(), &tmp)?;
             hm_vars.push(tmp);
         }
 
@@ -104,13 +93,23 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
             // ensure all the v inputs are smaller than 12289
             // v will need to be kept secret
             let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(e as u16)))?;
-            is_less_than_12289(cs.clone(), &tmp)?;
+            enforce_less_than_12289(cs.clone(), &tmp)?;
             v_pos_vars.push(tmp);
         }
 
         // ========================================
         // proving v = hm + sig * pk mod 12289
         // ========================================
+        // we are proving the polynomial congruence via
+        // a school-bool vector-matrix multiplication.
+        //
+        // Two alternative approaches are
+        // * FFT -- which itself requires one vector-matrix multiplication.
+        // * Karatsuba -- which takes less multiplications but more additions,
+        // and additions are also costly in our circuits representation.
+        //
+        // We will look into those options later.
+
         // build buffer = [-pk[0], -pk[1], ..., -pk[511], pk[0], pk[1], ..., pk[511]]
         let mut buf_poly_poly_vars = [neg_pk_poly_vars, pk_poly_vars].concat();
         buf_poly_poly_vars.reverse();
@@ -132,39 +131,53 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
             .enforce_equal(&Boolean::TRUE)?;
         }
 
-        Ok(())
+        // ========================================
+        // proving l2_norm(v | sig) < 34034726
+        // ========================================
+        let l2_norm_var = l2_norm_var(cs.clone(), &[v_pos_vars, sig_poly_vars].concat())?;
+        let l2_norm_bound_var = FpVar::<F>::new_constant(cs, F::from(34034726u64))?;
+        // todo: complete this optimization to save 1000 constraints
+        // enforce_less_than_norm_bound(cs, l2_norm_var)
+        l2_norm_var.enforce_cmp(&l2_norm_bound_var, std::cmp::Ordering::Less, false)
     }
 }
 
-#[test]
-fn test_r1cs() {
-    let keypair = KeyPair::keygen(9);
-    let message = "testing message";
-    let sig = keypair
-        .secret_key
-        .sign_with_seed("test seed".as_ref(), message.as_ref());
+#[cfg(test)]
+mod tests {
 
-    assert!(keypair.public_key.verify(message.as_ref(), &sig));
-    assert!(keypair
-        .public_key
-        .verify_rust_native(message.as_ref(), &sig));
+    use super::*;
+    use ark_ed_on_bls12_381::fq::Fq;
+    use ark_relations::r1cs::ConstraintSystem;
+    #[test]
+    fn test_r1cs() {
+        let keypair = KeyPair::keygen(9);
+        let message = "testing message";
+        let sig = keypair
+            .secret_key
+            .sign_with_seed("test seed".as_ref(), message.as_ref());
 
-    let cs = ConstraintSystem::<Fq>::new_ref();
+        assert!(keypair.public_key.verify(message.as_ref(), &sig));
+        assert!(keypair
+            .public_key
+            .verify_rust_native(message.as_ref(), &sig));
 
-    let falcon_circuit = FalconVerificationCircuit {
-        pk: keypair.public_key,
-        msg: message.to_string(),
-        sig,
-    };
+        let cs = ConstraintSystem::<Fq>::new_ref();
 
-    falcon_circuit.generate_constraints(cs.clone()).unwrap();
-    println!(
-        "number of variables {} {} and constraints {}\n",
-        cs.num_instance_variables(),
-        cs.num_witness_variables(),
-        cs.num_constraints(),
-    );
+        let falcon_circuit = FalconVerificationCircuit {
+            pk: keypair.public_key,
+            msg: message.to_string(),
+            sig,
+        };
 
-    assert!(cs.is_satisfied().unwrap());
-    // assert!(false)
+        falcon_circuit.generate_constraints(cs.clone()).unwrap();
+        println!(
+            "number of variables {} {} and constraints {}\n",
+            cs.num_instance_variables(),
+            cs.num_witness_variables(),
+            cs.num_constraints(),
+        );
+
+        assert!(cs.is_satisfied().unwrap());
+        assert!(false)
+    }
 }
