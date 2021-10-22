@@ -1,12 +1,14 @@
 [package]
 name = "falcon-r1cs"
+description = "A crate to generate the R1CS circuit for Falcon signature verifications."
 version = "0.1.0"
+authors = [ "Zhenfei Zhang <zhenfei.zhang@hotmail.com>" ]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-falcon-rust = { path = "../falcon-rust" }
+falcon-rust = { git = "https://github.com/zhenfeizhang/falcon-rust" }
 
 # Arkworks dependencies
 ark-ed-on-bls12-381 = { version = "0.3.0", default-features = false, features = ["r1cs"] }

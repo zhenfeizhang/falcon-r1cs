@@ -151,7 +151,7 @@ pub(crate) fn enforce_less_than_12289<F: PrimeField>(
     // suppressing this check so that unit test can test
     // bad paths
     #[cfg(not(test))]
-    if a_val >= F::from(34034726u64) {
+    if a_val >= F::from(12289u64) {
         panic!("Invalid input: {}", a_val);
     }
 
@@ -202,7 +202,7 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
     // suppressing this check so that unit test can test
     // bad paths
     #[cfg(not(test))]
-    if a_val >= F::from(12289u64) {
+    if a_val >= F::from(34034726u64) {
         panic!("Invalid input: {}", a_val);
     }
 
@@ -265,14 +265,13 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
                                             )?
                                         )?
                                     )?
+                                )?
                             )?
                         )?
-                    )?
-
-                )? 
+                    )? 
+                )?,
             )?,
-        )?,
-    )?.enforce_equal(&Boolean::TRUE)?;
+        )?.enforce_equal(&Boolean::TRUE)?;
 
     Ok(())
 }
