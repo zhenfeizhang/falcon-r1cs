@@ -1,5 +1,3 @@
-mod constants;
-// mod errors;
 mod gadgets;
 
 use crate::gadgets::*;
@@ -28,7 +26,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
         // ========================================
         // compute related data in the clear
         // ========================================
-        let hm = hash_message(self.msg.as_bytes(), self.sig.nonce().as_ref());
+        let hm = hash_message(self.msg.as_bytes(), self.sig.nonce());
         // compute v = hm - uh and lift it to positives
         let uh = poly_mul(&pk_poly, &sig_poly);
         let mut v_pos = [0i16; 512];
@@ -65,7 +63,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
         // pk
         //
         // here we use a buffer = [-pk[0], -pk[1], ..., -pk[511], pk[0], pk[1], ...,
-        // pk[511]] where the buffer[i+1..i+513] will be used for the i-th
+        // pk[511]] where the buffer[i+1..i+513].reverse() will be used for the i-th
         // column in inner-product calculation
         let mut pk_poly_vars = Vec::new();
         let mut neg_pk_poly_vars = Vec::new();
@@ -123,6 +121,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
                 cs.clone(),
                 sig_poly_vars.as_ref(),
                 buf_poly_poly_vars[511 - i..1023 - i].as_ref(),
+                &const_12289_var,
             )?;
 
             // right = hm + sig * pk[i]
@@ -137,11 +136,12 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconVerificationCircuit {
         // ========================================
         // proving l2_norm(v | sig) < 34034726
         // ========================================
-        let l2_norm_var = l2_norm_var(cs.clone(), &[v_pos_vars, sig_poly_vars].concat())?;
-        let l2_norm_bound_var = FpVar::<F>::new_constant(cs, F::from(34034726u64))?;
-        // todo: complete this optimization to save 1000 constraints
-        // enforce_less_than_norm_bound(cs, l2_norm_var)
-        l2_norm_var.enforce_cmp(&l2_norm_bound_var, std::cmp::Ordering::Less, false)
+        let l2_norm_var = l2_norm_var(
+            cs.clone(),
+            &[v_pos_vars, sig_poly_vars].concat(),
+            &const_12289_var,
+        )?;
+        enforce_less_than_norm_bound(cs, &l2_norm_var)
     }
 }
 

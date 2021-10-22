@@ -9,16 +9,11 @@ edition = "2018"
 falcon-rust = { path = "../falcon-rust" }
 
 # Arkworks dependencies
-ark-bls12-381 = { version = "0.3.0", default-features = false, features = ["curve"] }
-ark-crypto-primitives = { version = "0.3.0", default-features = false, features = ["r1cs"]}
 ark-ed-on-bls12-381 = { version = "0.3.0", default-features = false, features = ["r1cs"] }
 ark-ff = { version = "0.3.0", default-features = false }
 ark-groth16 = { version = "0.3.0", default-features = false, features = ["r1cs"] }
 ark-r1cs-std = { version = "0.3.1", default-features = false }
 ark-relations = { version = "0.3.0", default-features = false }
-ark-serialize = { version = "0.3.0", default-features = false, features = ["derive"] }
 ark-std = { version = "0.3.0", default-features = false }
 
 num-bigint = { version = "0.4", default-features = false}
-
-displaydoc = { version = "0.2.3", default-features = false }
