@@ -25,8 +25,17 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<()> {
         let sig_poly = self.sig.unpack();
         let pk_poly = self.pk.unpack();
-        let const_12289_var = FpVar::<F>::new_constant(cs.clone(), F::from(12289u16))?;
-        let param_var = ntt_param_var(cs.clone()).unwrap();
+        // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
+        let const_12289_vars: Vec<FpVar<F>> = (1..11)
+            .map(|x| {
+                FpVar::<F>::new_constant(
+                    cs.clone(),
+                    F::from(1u32 << (x - 1)) * F::from(12289u16).pow(&[x]),
+                )
+                .unwrap()
+            })
+            .collect();
+        let param_vars = ntt_param_var(cs.clone()).unwrap();
 
         // ========================================
         // compute related data in the clear
@@ -128,8 +137,8 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // NTT representation of the polynomial
         //  sig_ntt_vars = ntt_circuit(sig_vars)
         //  v_ntt_vars = ntt_circuit(v_vars)
-        let sig_ntt_vars = ntt_circuit(cs.clone(), &sig_poly_vars, &const_12289_var, &param_var)?;
-        let v_ntt_vars = ntt_circuit(cs.clone(), &v_pos_vars, &const_12289_var, &param_var)?;
+        let sig_ntt_vars = ntt_circuit(cs.clone(), &sig_poly_vars, &const_12289_vars, &param_vars)?;
+        let v_ntt_vars = ntt_circuit(cs.clone(), &v_pos_vars, &const_12289_vars, &param_vars)?;
 
         // second, prove the equation holds in the ntt domain
         for i in 0..512 {
@@ -147,7 +156,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
                 cs.clone(),
                 &hm_ntt_vars[i],
                 &(&sig_ntt_vars[i] * &pk_ntt_vars[i]),
-                &const_12289_var,
+                &const_12289_vars[0],
             )?)?;
         }
 
@@ -157,7 +166,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         let l2_norm_var = l2_norm_var(
             cs.clone(),
             &[v_pos_vars, sig_poly_vars].concat(),
-            &const_12289_var,
+            &const_12289_vars[0],
         )?;
         enforce_less_than_norm_bound(cs, &l2_norm_var)
     }

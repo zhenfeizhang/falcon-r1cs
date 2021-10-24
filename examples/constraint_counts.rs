@@ -1,6 +1,6 @@
 use ark_ed_on_bls12_381::fq::Fq;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, Field};
 use ark_std::{rand::Rng, test_rng};
 use falcon_r1cs::*;
 use falcon_rust::{ntt, *};
@@ -87,14 +87,23 @@ fn count_ntt_conversion_constraints() {
         .map(|x| FpVar::<Fq>::new_witness(cs.clone(), || Ok(*x)).unwrap())
         .collect();
 
-    let const_12289_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289u16)).unwrap();
+    // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
+    let const_12289_vars: Vec<FpVar<Fq>> = (1..11)
+        .map(|x| {
+            FpVar::<Fq>::new_constant(
+                cs.clone(),
+                Fq::from(1 << (x - 1)) * Fq::from(12289u16).pow(&[x]),
+            )
+            .unwrap()
+        })
+        .collect();
     let output = ntt(poly_u32.as_ref());
 
     let num_instance_variables = cs.num_instance_variables();
     let num_witness_variables = cs.num_witness_variables();
     let num_constraints = cs.num_constraints();
 
-    let output_var = ntt_circuit(cs.clone(), &poly_var, &const_12289_var, &param_var).unwrap();
+    let output_var = ntt_circuit(cs.clone(), &poly_var, &const_12289_vars, &param_var).unwrap();
     println!(
         "ntt conversion:               {:8} |       {:8} |          {:8} |",
         cs.num_instance_variables() - num_instance_variables,

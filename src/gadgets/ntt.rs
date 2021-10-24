@@ -1,18 +1,22 @@
 #![allow(clippy::many_single_char_names)]
 
 use super::*;
-use crate::gadgets::arithmetics::mul_mod;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use falcon_rust::NTT_TABLE;
 
 /// The circuit to convert a poly into its NTT form
-/// Cost 84480 constraints.
+/// Cost 15360 constraints.
+/// Inputs:
+/// - cs: constraint system
+/// - input: the wires of the input polynomial
+/// - const_vars: the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
+/// - param: the forward NTT table in wire format
 pub fn ntt_circuit<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     input: &[FpVar<F>],
-    const_var: &FpVar<F>,
+    const_vars: &[FpVar<F>],
     param: &[FpVar<F>],
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     if input.len() != 512 {
@@ -32,14 +36,21 @@ pub fn ntt_circuit<F: PrimeField>(
             let j2 = j1 + ht;
             let mut j = j1;
             while j < j2 {
+                // for the l-th loop, we know that all the output's
+                // coefficients are less than q^{l+1}
+                // therefore we have
+                //  u < 2^l * q^{l+1}
+                //  v < 2^l * q^{l+2}
+                // and we have
+                //  neg_v = q^{l+2} - v
+                // note that this works when q^10 < F::Modulus
+                // so all operations here becomes native field operations
                 let u = output[j].clone();
-                // here both v and neg_v are less than 12289
-                // we therefore need a mul_mod algorithm
-                let v = mul_mod(cs.clone(), &output[j + ht], &s, const_var)?;
-                let neg_v = const_var - &v;
+                let v = &output[j + ht] * &s;
+                let neg_v = &const_vars[l + 1] - &v;
 
                 // output[j] and output[j+ht]
-                // are between 0 and 12289*2
+                // are between 0 and 2^{l+1} * q^{l+2}
                 output[j] = &u + &v;
                 output[j + ht] = &u + &neg_v;
                 j += 1;
@@ -49,11 +60,12 @@ pub fn ntt_circuit<F: PrimeField>(
         }
         t = ht;
     }
-
+    
     // perform a final mod reduction to make the
     // output into the right range
+    // this is the only place that we need non-native circuits
     for e in output.iter_mut() {
-        *e = mod_q(cs.clone(), e, const_var)?;
+        *e = mod_q(cs.clone(), e, &const_vars[0])?;
     }
 
     Ok(output)
@@ -88,6 +100,7 @@ pub(crate) fn inv_ntt_param_var<F: PrimeField>(
 mod tests {
     use super::*;
     use ark_ed_on_bls12_381::fq::Fq;
+    use ark_ff::Field;
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng};
@@ -99,7 +112,17 @@ mod tests {
 
         for _ in 0..10 {
             let cs = ConstraintSystem::<Fq>::new_ref();
-            let param_var = ntt_param_var(cs.clone()).unwrap();
+            let param_vars = ntt_param_var(cs.clone()).unwrap();
+            // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
+            let const_12289_vars: Vec<FpVar<Fq>> = (1..11)
+                .map(|x| {
+                    FpVar::<Fq>::new_constant(
+                        cs.clone(),
+                        Fq::from(1 << (x - 1)) * Fq::from(12289u16).pow(&[x]),
+                    )
+                    .unwrap()
+                })
+                .collect();
             let poly_u32 = (0..512)
                 .map(|_| rng.gen_range(0..12289))
                 .collect::<Vec<u32>>();
@@ -109,8 +132,6 @@ mod tests {
                 .map(|x| FpVar::<Fq>::new_witness(cs.clone(), || Ok(*x)).unwrap())
                 .collect();
 
-            let const_12289_var =
-                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289u16)).unwrap();
             let output = ntt(poly_u32.as_ref());
 
             let num_instance_variables = cs.num_instance_variables();
@@ -118,7 +139,7 @@ mod tests {
             let num_constraints = cs.num_constraints();
 
             let output_var =
-                ntt_circuit(cs.clone(), &poly_var, &const_12289_var, &param_var).unwrap();
+                ntt_circuit(cs.clone(), &poly_var, &const_12289_vars, &param_vars).unwrap();
             println!(
                 "number of variables {} {} and constraints {}\n",
                 cs.num_instance_variables() - num_instance_variables,
