@@ -4,6 +4,8 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 #[cfg(not(test))]
 use falcon_rust::MODULUS;
+#[cfg(not(test))]
+use falcon_rust::SIG_L2_BOUND;
 
 /// Constraint that the witness of a is smaller than 12289
 /// Cost: 28 constraints.
@@ -61,20 +63,17 @@ pub(crate) fn enforce_less_than_q<F: PrimeField>(
     // }
     Ok(())
 }
+
 /// Constraint that the witness of a is smaller than 34034726
 /// Cost: 47 constraints.
-/// (This improves the range proof of 1264 constraints as in Arkworks.)
-pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
+/// (This improves the range proof of 1264 constraints as in Arkworks.)    
+#[cfg(feature = "falcon-512")]
+fn enforce_less_than_norm_bound_512<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
 ) -> Result<(), SynthesisError> {
     // the norm bound is 0b10000001110101010000100110 which is 26 bits, i.e.,
     // 2^25 + 2^18 + 2^17 + 2^16 + 2^14 + 2^ 12 + 2^10 + 2^5 + 2^2 + 2
-    // if !cs.is_in_setup_mode(){
-
-    //     println!("< norm cs satisfied? {:?}", cs.is_satisfied());
-
-    // }
     let a_val = if cs.is_in_setup_mode() {
         F::one()
     } else {
@@ -84,7 +83,7 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
     // suppressing this check so that unit test can test
     // bad paths
     #[cfg(not(test))]
-    if a_val >= F::from(34034726u64) {
+    if a_val >= F::from(SIG_L2_BOUND) {
         panic!("Invalid input: {}", a_val);
     }
 
@@ -154,10 +153,104 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
                 )?,
             )?,
         )?.enforce_equal(&Boolean::TRUE)?;
+    Ok(())
+}
 
-    //     if !cs.is_in_setup_mode(){
-    // println!("< norm cs satisfied? {:?}", cs.is_satisfied());
-    //     }
+/// Constraint that the witness of a is smaller than 34034726
+/// Cost: 54 constraints.
+/// (This improves the range proof of 1264 constraints as in Arkworks.)    
+#[cfg(feature = "falcon-1024")]
+fn enforce_less_than_norm_bound_1024<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+) -> Result<(), SynthesisError> {
+    // the norm bound is 0b100001100000010100110011010 which is 26 bits, i.e.,
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+
+    // suppressing this check so that unit test can test
+    // bad paths
+    #[cfg(not(test))]
+    if a_val >= F::from(SIG_L2_BOUND) {
+        panic!("Invalid input: {}", a_val);
+    }
+
+    let a_bits = a_val.into_repr().to_bits_le();
+    // a_bit_vars is the least 26 bits of a
+    // (we only care for the first 26 bits of a_bits)
+    let a_bit_vars = a_bits
+        .iter()
+        .take(27)
+        .map(|x| Boolean::new_witness(cs.clone(), || Ok(x)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // ensure that a_bits are the bit decomposition of a
+    enforce_decompose(a, a_bit_vars.as_ref())?;
+
+    // argue that a < 0b100001100000010100110011010  via the following:
+    // - a[26] == 0 or
+    // - a[26] == 1 and a[22..25] == 0 and
+    //    - either one of a[20..21] == 0
+    //    - or a[20..21] == 1 and a[14..19] == 0 and
+    //      - either a[13] == 0
+    //      - or a[13] == 1 and a[12] == 0 and
+    //          - either a[11] == 0
+    //          - or a[11] == 1 and a[9..10] == 0 and
+    //              - either one of a[7] or a[8] == 0
+    //              - or, a[7] == a[8] == 1 and a[5] == a[6] == 0 and
+    //                  - either a[4] or a[3] == 0 or
+    //                  - or a[4] == a[3] == 1 and a[2] == a[1] == 0
+    #[rustfmt::skip]
+    // a[26] == 0
+    (a_bit_vars[26].is_eq(&Boolean::FALSE)?).or(
+        // a[26] == 1 and a[22..25] == 0 and
+        &Boolean::kary_or(a_bit_vars[22..26].as_ref())?.is_eq(&Boolean::FALSE)?.and(
+            // - either one of a[20..21] == 0
+            &Boolean::kary_and(a_bit_vars[20..22].as_ref())?.is_eq(&Boolean::FALSE)?.or(
+                // - or a[20..21] == 0 and a[14..19] == 0
+                &Boolean::kary_or(a_bit_vars[14..20].as_ref())?.is_eq(&Boolean::FALSE)?.and(
+                    // - either a[13] == 0
+                    &a_bit_vars[13].is_eq(&Boolean::FALSE)?.or(
+                        // - or a[13] == 1 and a[12] == 0 and
+                        &a_bit_vars[12].is_eq(&Boolean::FALSE)?.and(
+                            // - either a[11] == 0
+                            &a_bit_vars[11].is_eq(&Boolean::FALSE)?.or(
+                                // - or a[11] == 1 and a[9..10] == 0 and
+                                &Boolean::kary_or(a_bit_vars[9..11].as_ref())?.is_eq(&Boolean::FALSE)?.and(
+                                    // - either one of a[7] or a[8] == 0
+                                    &Boolean::kary_and(a_bit_vars[7..9].as_ref())?.is_eq(&Boolean::FALSE)?.or(
+                                        // - or, a[7] == a[8] == 1 and a[5] == a[6] == 0 and
+                                        &Boolean::kary_or(a_bit_vars[5..7].as_ref())?.is_eq(&Boolean::FALSE)?.and(
+                                            // - either a[4] or a[3] == 0
+                                            &Boolean::kary_and(a_bit_vars[3..5].as_ref())?.is_eq(&Boolean::FALSE)?.or(
+                                                // and a[2] == a[1] == 0
+                                                &Boolean::kary_or(a_bit_vars[1..3].as_ref())?.is_eq(&Boolean::FALSE)?
+                                            )?
+                                        )?
+                                    )?
+                                )?
+                            )?
+                        )?
+                    )?
+                )?
+            )?,
+        )?
+    )?.enforce_equal(&Boolean::TRUE)?;
+    Ok(())
+}
+
+pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+) -> Result<(), SynthesisError> {
+    #[cfg(feature = "falcon-512")]
+    enforce_less_than_norm_bound_512(cs, a)?;
+    #[cfg(feature = "falcon-1024")]
+    enforce_less_than_norm_bound_1024(cs, a)?;
+
     Ok(())
 }
 
@@ -216,7 +309,7 @@ mod tests {
     use ark_ed_on_bls12_381::fq::Fq;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng};
-    use falcon_rust::{SIG_L2_BOUND, MODULUS};
+    use falcon_rust::{MODULUS, SIG_L2_BOUND};
 
     macro_rules! test_range_proof_mod_q {
         ($value: expr, $satisfied: expr) => {
@@ -226,12 +319,12 @@ mod tests {
 
             enforce_less_than_q(cs.clone(), &a_var).unwrap();
             assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables(),
-                cs.num_witness_variables(),
-                cs.num_constraints(),
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables(),
+            //     cs.num_witness_variables(),
+            //     cs.num_constraints(),
+            // );
         };
     }
     #[test]
@@ -252,7 +345,7 @@ mod tests {
         test_range_proof_mod_q!(1 << 13, true);
 
         // edge case: 12288
-        test_range_proof_mod_q!(MODULUS-1, true);
+        test_range_proof_mod_q!(MODULUS - 1, true);
 
         // =======================
         // bad path
@@ -261,10 +354,10 @@ mod tests {
         test_range_proof_mod_q!(MODULUS, false);
 
         // edge case: 12290
-        test_range_proof_mod_q!(MODULUS+1, false);
+        test_range_proof_mod_q!(MODULUS + 1, false);
 
         // edge case: 122890000
-        test_range_proof_mod_q!(MODULUS*10000, false);
+        test_range_proof_mod_q!(MODULUS * 10000, false);
 
         // =======================
         // random path
@@ -275,19 +368,22 @@ mod tests {
             test_range_proof_mod_q!(t, t < MODULUS);
         }
 
-        // // the following code prints out the
-        // // cost for arkworks native range proof
-        // let cs = ConstraintSystem::<Fq>::new_ref();
-        // let a = Fq::from(42);
-        // let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
-        // let b_var = FpVar::<Fq>::new_constant(cs.clone(),
-        // Fq::from(12289)).unwrap(); a_var.enforce_cmp(&b_var,Ordering:
-        // :Less, false).unwrap(); println!(
-        //     "number of variables {} {} and constraints {}\n",
-        //     cs.num_instance_variables(),
-        //     cs.num_witness_variables(),
-        //     cs.num_constraints(),
-        // );
+        // the following code prints out the
+        // cost for arkworks native range proof
+        // {
+        //     let cs = ConstraintSystem::<Fq>::new_ref();
+        //     let a = Fq::from(42u64);
+        //     let a_var = FpVar::<Fq>::new_witness(cs.clone(), ||
+        // Ok(a)).unwrap();     let b_var =
+        // FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
+        //     a_var.enforce_cmp(&b_var, Ordering::Less, false).unwrap();
+        //     println!(
+        //         "number of variables {} {} and constraints {}\n",
+        //         cs.num_instance_variables(),
+        //         cs.num_witness_variables(),
+        //         cs.num_constraints(),
+        //     );
+        // }
 
         // assert!(false)
     }
@@ -300,12 +396,12 @@ mod tests {
 
             enforce_less_than_norm_bound(cs.clone(), &a_var).unwrap();
             assert_eq!(cs.is_satisfied().unwrap(), $satisfied, "{}", $value);
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables(),
-                cs.num_witness_variables(),
-                cs.num_constraints(),
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables(),
+            //     cs.num_witness_variables(),
+            //     cs.num_constraints(),
+            // );
         };
     }
     #[test]
@@ -325,8 +421,12 @@ mod tests {
         // edge case: 2^24
         test_range_proof_norm_bound!(1 << 24, true);
 
+        #[cfg(feature = "falcon-1024")]
+        // edge case: 2^26
+        test_range_proof_norm_bound!(1 << 26, true);
+
         // edge case: 34034725
-        test_range_proof_norm_bound!(SIG_L2_BOUND-1, true);
+        test_range_proof_norm_bound!(SIG_L2_BOUND - 1, true);
 
         // =======================
         // bad path
@@ -335,8 +435,9 @@ mod tests {
         test_range_proof_norm_bound!(SIG_L2_BOUND, false);
 
         // edge case: 34034727
-        test_range_proof_norm_bound!(SIG_L2_BOUND+1, false);
+        test_range_proof_norm_bound!(SIG_L2_BOUND + 1, false);
 
+        #[cfg(feature = "falcon-512")]
         // edge case: 2^26
         test_range_proof_norm_bound!(1 << 26, false);
 
@@ -352,22 +453,24 @@ mod tests {
             test_range_proof_norm_bound!(t, t < SIG_L2_BOUND);
         }
 
-        // // the following code prints out the
-        // // cost for arkworks native range proof
-        // let cs = ConstraintSystem::<Fq>::new_ref();
-        // let a = Fq::from(42);
-        // let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
-        // let b_var = FpVar::<Fq>::new_constant(cs.clone(),
-        // Fq::from(12289)).unwrap(); a_var
-        //     .enforce_cmp(&b_var, std::cmp::Ordering::Less, false)
-        //     .unwrap();
-        // println!(
-        //     "number of variables {} {} and constraints {}\n",
-        //     cs.num_instance_variables(),
-        //     cs.num_witness_variables(),
-        //     cs.num_constraints(),
-        // );
-
+        // the following code prints out the
+        // cost for arkworks native range proof
+        // {
+        //     let cs = ConstraintSystem::<Fq>::new_ref();
+        //     let a = Fq::from(42);
+        //     let a_var = FpVar::<Fq>::new_witness(cs.clone(), ||
+        // Ok(a)).unwrap();     let b_var =
+        // FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289)).unwrap();
+        //     a_var
+        //         .enforce_cmp(&b_var, std::cmp::Ordering::Less, false)
+        //         .unwrap();
+        //     println!(
+        //         "number of variables {} {} and constraints {}\n",
+        //         cs.num_instance_variables(),
+        //         cs.num_witness_variables(),
+        //         cs.num_constraints(),
+        //     );
+        // }
         // assert!(false)
     }
 
@@ -380,12 +483,12 @@ mod tests {
             let is_less = is_less_than_6144(cs.clone(), &a_var).unwrap();
             is_less.enforce_equal(&Boolean::TRUE).unwrap();
             assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables(),
-                cs.num_witness_variables(),
-                cs.num_constraints(),
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables(),
+            //     cs.num_witness_variables(),
+            //     cs.num_constraints(),
+            // );
         };
     }
     #[test]
@@ -423,22 +526,24 @@ mod tests {
             test_range_proof_half_q!(t, t < 6144);
         }
 
-        // // the following code prints out the
-        // // cost for arkworks native range proof
-        // let cs = ConstraintSystem::<Fq>::new_ref();
-        // let a = Fq::from(42);
-        // let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
-        // let b_var = FpVar::<Fq>::new_constant(cs.clone(),
-        // Fq::from(12289)).unwrap(); a_var
-        //     .enforce_cmp(&b_var, std::cmp::Ordering::Less, false)
-        //     .unwrap();
-        // println!(
-        //     "number of variables {} {} and constraints {}\n",
-        //     cs.num_instance_variables(),
-        //     cs.num_witness_variables(),
-        //     cs.num_constraints(),
-        // );
-
+        // the following code prints out the
+        // cost for arkworks native range proof
+        // {
+        //     let cs = ConstraintSystem::<Fq>::new_ref();
+        //     let a = Fq::from(42);
+        //     let a_var = FpVar::<Fq>::new_witness(cs.clone(), ||
+        // Ok(a)).unwrap();     let b_var =
+        // FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289)).unwrap();
+        //     a_var
+        //         .enforce_cmp(&b_var, std::cmp::Ordering::Less, false)
+        //         .unwrap();
+        //     println!(
+        //         "number of variables {} {} and constraints {}\n",
+        //         cs.num_instance_variables(),
+        //         cs.num_witness_variables(),
+        //         cs.num_constraints(),
+        //     );
+        // }
         // assert!(false)
     }
 }
