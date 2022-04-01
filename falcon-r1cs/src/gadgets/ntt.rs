@@ -60,7 +60,7 @@ pub fn ntt_circuit<F: PrimeField>(
         }
         t = ht;
     }
-    
+
     // perform a final mod reduction to make the
     // output into the right range
     // this is the only place that we need non-native circuits

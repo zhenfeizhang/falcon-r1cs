@@ -13,8 +13,8 @@ fn main() {
 }
 
 fn count_verify_with_schoolbook_constraints() {
-    let keypair = KeyPair::keygen(9);
-    let message = "testing message";
+    let keypair = KeyPair::keygen();
+    let message = "testing message".as_bytes();
     let sig = keypair
         .secret_key
         .sign_with_seed("test seed".as_ref(), message.as_ref());
@@ -28,7 +28,7 @@ fn count_verify_with_schoolbook_constraints() {
 
     let falcon_circuit = FalconSchoolBookVerificationCircuit::build_circuit(
         keypair.public_key,
-        message.to_string(),
+        message.to_vec(),
         sig,
     );
 
@@ -44,8 +44,8 @@ fn count_verify_with_schoolbook_constraints() {
 }
 
 fn count_verify_with_ntt_constraints() {
-    let keypair = KeyPair::keygen(9);
-    let message = "testing message";
+    let keypair = KeyPair::keygen();
+    let message = "testing message".as_bytes();
     let sig = keypair
         .secret_key
         .sign_with_seed("test seed".as_ref(), message.as_ref());
@@ -61,7 +61,7 @@ fn count_verify_with_ntt_constraints() {
     let cs = ConstraintSystem::<Fq>::new_ref();
 
     let falcon_circuit =
-        FalconNTTVerificationCircuit::build_circuit(keypair.public_key, message.to_string(), sig);
+        FalconNTTVerificationCircuit::build_circuit(keypair.public_key, message.to_vec(), sig);
     falcon_circuit.generate_constraints(cs.clone()).unwrap();
     println!(
         "verify with ntt:              {:8} |       {:8} |          {:8} |",
