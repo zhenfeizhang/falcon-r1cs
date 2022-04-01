@@ -103,7 +103,7 @@ mod tests {
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng};
-    use falcon_rust::ntt;
+    use falcon_rust::{ntt, MODULUS};
 
     #[test]
     fn test_ntt_mul_circuit() {
@@ -113,11 +113,11 @@ mod tests {
             let cs = ConstraintSystem::<Fq>::new_ref();
             let param_vars = ntt_param_var(cs.clone()).unwrap();
             // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
-            let const_12289_vars: Vec<FpVar<Fq>> = (1..11)
+            let const_power_q_vars: Vec<FpVar<Fq>> = (1..11)
                 .map(|x| {
                     FpVar::<Fq>::new_constant(
                         cs.clone(),
-                        Fq::from(1 << (x - 1)) * Fq::from(12289u16).pow(&[x]),
+                        Fq::from(1 << (x - 1)) * Fq::from(MODULUS).pow(&[x]),
                     )
                     .unwrap()
                 })
@@ -138,7 +138,7 @@ mod tests {
             let num_constraints = cs.num_constraints();
 
             let output_var =
-                ntt_circuit(cs.clone(), &poly_var, &const_12289_vars, &param_vars).unwrap();
+                ntt_circuit(cs.clone(), &poly_var, &const_power_q_vars, &param_vars).unwrap();
             println!(
                 "number of variables {} {} and constraints {}\n",
                 cs.num_instance_variables() - num_instance_variables,
