@@ -216,6 +216,7 @@ mod tests {
     use ark_ed_on_bls12_381::fq::Fq;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng};
+    use falcon_rust::{SIG_L2_BOUND, MODULUS};
 
     macro_rules! test_range_proof_mod_q {
         ($value: expr, $satisfied: expr) => {
@@ -251,19 +252,19 @@ mod tests {
         test_range_proof_mod_q!(1 << 13, true);
 
         // edge case: 12288
-        test_range_proof_mod_q!(12288, true);
+        test_range_proof_mod_q!(MODULUS-1, true);
 
         // =======================
         // bad path
         // =======================
         // edge case: 12289
-        test_range_proof_mod_q!(12289, false);
+        test_range_proof_mod_q!(MODULUS, false);
 
         // edge case: 12290
-        test_range_proof_mod_q!(12290, false);
+        test_range_proof_mod_q!(MODULUS+1, false);
 
-        // edge case: 12290
-        test_range_proof_mod_q!(122900000, false);
+        // edge case: 122890000
+        test_range_proof_mod_q!(MODULUS*10000, false);
 
         // =======================
         // random path
@@ -271,7 +272,7 @@ mod tests {
         let mut rng = test_rng();
         for _ in 0..1000 {
             let t = rng.gen_range(0..1 << 15);
-            test_range_proof_mod_q!(t, t < 12289);
+            test_range_proof_mod_q!(t, t < MODULUS);
         }
 
         // // the following code prints out the
@@ -325,16 +326,16 @@ mod tests {
         test_range_proof_norm_bound!(1 << 24, true);
 
         // edge case: 34034725
-        test_range_proof_norm_bound!(34034725, true);
+        test_range_proof_norm_bound!(SIG_L2_BOUND-1, true);
 
         // =======================
         // bad path
         // =======================
         // edge case: 34034726
-        test_range_proof_norm_bound!(34034726, false);
+        test_range_proof_norm_bound!(SIG_L2_BOUND, false);
 
         // edge case: 34034727
-        test_range_proof_norm_bound!(34034727, false);
+        test_range_proof_norm_bound!(SIG_L2_BOUND+1, false);
 
         // edge case: 2^26
         test_range_proof_norm_bound!(1 << 26, false);
@@ -348,7 +349,7 @@ mod tests {
         let mut rng = test_rng();
         for _ in 0..1000 {
             let t = rng.gen_range(0..1 << 27);
-            test_range_proof_norm_bound!(t, t < 34034726);
+            test_range_proof_norm_bound!(t, t < SIG_L2_BOUND);
         }
 
         // // the following code prints out the
@@ -411,7 +412,7 @@ mod tests {
         test_range_proof_half_q!(6145, false);
 
         // edge case: 12289
-        test_range_proof_half_q!(12289, false);
+        test_range_proof_half_q!(MODULUS, false);
 
         // =======================
         // random path
