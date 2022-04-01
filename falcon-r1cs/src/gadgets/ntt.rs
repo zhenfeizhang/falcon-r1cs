@@ -4,7 +4,7 @@ use super::*;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
-use falcon_rust::{N, NTT_TABLE};
+use falcon_rust::{LOG_N, N, NTT_TABLE};
 
 /// The circuit to convert a poly into its NTT form
 /// Cost 15360 constraints.
@@ -25,7 +25,7 @@ pub fn ntt_circuit<F: PrimeField>(
     let mut output = input.to_vec();
 
     let mut t = N;
-    for l in 0..9 {
+    for l in 0..LOG_N {
         let m = 1 << l;
         let ht = t / 2;
         let mut i = 0;
@@ -113,17 +113,17 @@ mod tests {
             let cs = ConstraintSystem::<Fq>::new_ref();
             let param_vars = ntt_param_var(cs.clone()).unwrap();
             // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
-            let const_power_q_vars: Vec<FpVar<Fq>> = (1..11)
+            let const_power_q_vars: Vec<FpVar<Fq>> = (1..LOG_N + 2)
                 .map(|x| {
                     FpVar::<Fq>::new_constant(
                         cs.clone(),
-                        Fq::from(1 << (x - 1)) * Fq::from(MODULUS).pow(&[x]),
+                        Fq::from(1 << (x - 1)) * Fq::from(MODULUS).pow(&[x as u64]),
                     )
                     .unwrap()
                 })
                 .collect();
             let poly_u32 = (0..N)
-                .map(|_| rng.gen_range(0..12289))
+                .map(|_| rng.gen_range(0..MODULUS))
                 .collect::<Vec<u32>>();
             let poly = poly_u32.iter().map(|x| Fq::from(*x)).collect::<Vec<Fq>>();
             let poly_var: Vec<FpVar<Fq>> = poly
@@ -133,18 +133,18 @@ mod tests {
 
             let output = ntt(poly_u32.as_ref());
 
-            let num_instance_variables = cs.num_instance_variables();
-            let num_witness_variables = cs.num_witness_variables();
-            let num_constraints = cs.num_constraints();
+            // let num_instance_variables = cs.num_instance_variables();
+            // let num_witness_variables = cs.num_witness_variables();
+            // let num_constraints = cs.num_constraints();
 
             let output_var =
                 ntt_circuit(cs.clone(), &poly_var, &const_power_q_vars, &param_vars).unwrap();
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables() - num_instance_variables,
-                cs.num_witness_variables() - num_witness_variables,
-                cs.num_constraints() - num_constraints,
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables() - num_instance_variables,
+            //     cs.num_witness_variables() - num_witness_variables,
+            //     cs.num_constraints() - num_constraints,
+            // );
 
             for i in 0..N {
                 assert_eq!(Fq::from(output[i]), output_var[i].value().unwrap())

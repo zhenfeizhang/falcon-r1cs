@@ -88,11 +88,11 @@ fn count_ntt_conversion_constraints() {
         .collect();
 
     // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
-    let const_mod_q_vars: Vec<FpVar<Fq>> = (1..11)
+    let const_mod_q_vars: Vec<FpVar<Fq>> = (1..LOG_N + 2)
         .map(|x| {
             FpVar::<Fq>::new_constant(
                 cs.clone(),
-                Fq::from(1 << (x - 1)) * Fq::from(MODULUS).pow(&[x]),
+                Fq::from(1 << (x - 1)) * Fq::from(MODULUS).pow(&[x as u64]),
             )
             .unwrap()
         })

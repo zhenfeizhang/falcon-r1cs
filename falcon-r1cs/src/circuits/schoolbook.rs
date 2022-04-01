@@ -34,7 +34,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
         let hm = hash_message(self.msg.as_ref(), self.sig.nonce());
         // compute v = hm + uh and lift it to positives
         let uh = schoolbook_mul(&pk_poly, &sig_poly);
-        let mut v_pos = [0i16; 512];
+        let mut v_pos = [0i16; N];
 
         for (c, (&a, &b)) in v_pos.iter_mut().zip(uh.iter().zip(hm.iter())) {
             let c_i32 = (b as i32) + (a as i32);
@@ -106,16 +106,16 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
         // a school-bool vector-matrix multiplication.
         //
         //
-        // build buffer = [-pk[0], -pk[1], ..., -pk[511], pk[0], pk[1], ..., pk[511]]
+        // build buffer = [-pk[0], -pk[1], ..., -pk[N-1], pk[0], pk[1], ..., pk[N]]
         let mut buf_poly_poly_vars = [neg_pk_poly_vars, pk_poly_vars].concat();
         buf_poly_poly_vars.reverse();
 
-        for i in 0..512 {
+        for i in 0..N {
             // current_col = sig * pk[i]
             let current_col = inner_product_mod(
                 cs.clone(),
                 sig_poly_vars.as_ref(),
-                buf_poly_poly_vars[511 - i..1023 - i].as_ref(),
+                buf_poly_poly_vars[N - 1 - i..N * 2 - 1 - i].as_ref(),
                 &const_q_var,
             )?;
 
@@ -168,12 +168,12 @@ mod tests {
         };
 
         falcon_circuit.generate_constraints(cs.clone()).unwrap();
-        println!(
-            "number of variables {} {} and constraints {}\n",
-            cs.num_instance_variables(),
-            cs.num_witness_variables(),
-            cs.num_constraints(),
-        );
+        // println!(
+        //     "number of variables {} {} and constraints {}\n",
+        //     cs.num_instance_variables(),
+        //     cs.num_witness_variables(),
+        //     cs.num_constraints(),
+        // );
 
         assert!(cs.is_satisfied().unwrap());
     }

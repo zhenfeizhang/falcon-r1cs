@@ -2,7 +2,7 @@ use super::*;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
-use falcon_rust::MODULUS;
+use falcon_rust::{MODULUS, N};
 use num_bigint::BigUint;
 
 /// Generate the variables c = a * B mod 12289;
@@ -56,12 +56,12 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
 
     // rebuild the field elements
     let a_val = if cs.is_in_setup_mode() {
-        vec![F::one(); 512]
+        vec![F::one(); N]
     } else {
         a.value()?
     };
     let b_val = if cs.is_in_setup_mode() {
-        vec![F::one(); 512]
+        vec![F::one(); N]
     } else {
         b.value()?
     };
@@ -315,20 +315,19 @@ mod tests {
             let b = Fq::from($b);
 
             let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
-            let const_q_var =
-                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
+            let const_q_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
 
-            let num_instance_variables = cs.num_instance_variables();
-            let num_witness_variables = cs.num_witness_variables();
-            let num_constraints = cs.num_constraints();
+            // let num_instance_variables = cs.num_instance_variables();
+            // let num_witness_variables = cs.num_witness_variables();
+            // let num_constraints = cs.num_constraints();
 
             let b_var = mod_q(cs.clone(), &a_var, &const_q_var).unwrap();
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables() - num_instance_variables,
-                cs.num_witness_variables() - num_witness_variables,
-                cs.num_constraints() - num_constraints,
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables() - num_instance_variables,
+            //     cs.num_witness_variables() - num_witness_variables,
+            //     cs.num_constraints() - num_constraints,
+            // );
 
             let b_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(b)).unwrap();
             b_var.enforce_equal(&b_var2).unwrap();
@@ -351,14 +350,14 @@ mod tests {
         test_mod_q!(MODULUS, 0, true);
 
         // edge case: wraparound
-        test_mod_q!(MODULUS+1, 1, true);
+        test_mod_q!(MODULUS + 1, 1, true);
 
         // =======================
         // bad path
         // =======================
         // wrong value
         test_mod_q!(6, 7, false);
-        test_mod_q!(5, MODULUS-1, false);
+        test_mod_q!(5, MODULUS - 1, false);
 
         // =======================
         // random path
@@ -382,20 +381,19 @@ mod tests {
 
             let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
             let b_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(b)).unwrap();
-            let const_q_var =
-                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
+            let const_q_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
 
-            let num_instance_variables = cs.num_instance_variables();
-            let num_witness_variables = cs.num_witness_variables();
-            let num_constraints = cs.num_constraints();
+            // let num_instance_variables = cs.num_instance_variables();
+            // let num_witness_variables = cs.num_witness_variables();
+            // let num_constraints = cs.num_constraints();
 
             let c_var = mul_mod(cs.clone(), &a_var, &b_var, &const_q_var).unwrap();
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables() - num_instance_variables,
-                cs.num_witness_variables() - num_witness_variables,
-                cs.num_constraints() - num_constraints,
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables() - num_instance_variables,
+            //     cs.num_witness_variables() - num_witness_variables,
+            //     cs.num_constraints() - num_constraints,
+            // );
 
             let c_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(c)).unwrap();
             c_var.enforce_equal(&c_var2).unwrap();
@@ -445,20 +443,19 @@ mod tests {
 
             let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
             let b_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(b)).unwrap();
-            let const_q_var =
-                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
+            let const_q_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
 
-            let num_instance_variables = cs.num_instance_variables();
-            let num_witness_variables = cs.num_witness_variables();
-            let num_constraints = cs.num_constraints();
+            // let num_instance_variables = cs.num_instance_variables();
+            // let num_witness_variables = cs.num_witness_variables();
+            // let num_constraints = cs.num_constraints();
 
             let c_var = add_mod(cs.clone(), &a_var, &b_var, &const_q_var).unwrap();
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables() - num_instance_variables,
-                cs.num_witness_variables() - num_witness_variables,
-                cs.num_constraints() - num_constraints,
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables() - num_instance_variables,
+            //     cs.num_witness_variables() - num_witness_variables,
+            //     cs.num_constraints() - num_constraints,
+            // );
 
             let c_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(c)).unwrap();
             c_var.enforce_equal(&c_var2).unwrap();
@@ -487,14 +484,14 @@ mod tests {
         test_add_mod!(100, 0, 100, true);
 
         // edge case: wraparound
-        test_add_mod!(5, MODULUS-1, 4, true);
+        test_add_mod!(5, MODULUS - 1, 4, true);
 
         // =======================
         // bad path
         // =======================
         // wrong value
         test_add_mod!(6, 7, 41, false);
-        test_add_mod!(5, MODULUS-1, 3, false);
+        test_add_mod!(5, MODULUS - 1, 3, false);
 
         // =======================
         // random path
@@ -518,20 +515,19 @@ mod tests {
 
             let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
             let b_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(b)).unwrap();
-            let const_q_var =
-                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
+            let const_q_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
 
-            let num_instance_variables = cs.num_instance_variables();
-            let num_witness_variables = cs.num_witness_variables();
-            let num_constraints = cs.num_constraints();
+            // let num_instance_variables = cs.num_instance_variables();
+            // let num_witness_variables = cs.num_witness_variables();
+            // let num_constraints = cs.num_constraints();
 
             let c_var = sub_mod(cs.clone(), &a_var, &b_var, &const_q_var).unwrap();
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables() - num_instance_variables,
-                cs.num_witness_variables() - num_witness_variables,
-                cs.num_constraints() - num_constraints,
-            );
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables() - num_instance_variables,
+            //     cs.num_witness_variables() - num_witness_variables,
+            //     cs.num_constraints() - num_constraints,
+            // );
 
             let c_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(c)).unwrap();
             c_var.enforce_equal(&c_var2).unwrap();
@@ -567,7 +563,7 @@ mod tests {
         // =======================
         // wrong value
         test_sub_mod!(6, 7, 41, false);
-        test_sub_mod!(5, MODULUS-1, 3, false);
+        test_sub_mod!(5, MODULUS - 1, 3, false);
 
         // =======================
         // random path
@@ -577,8 +573,18 @@ mod tests {
             let t1 = rng.gen_range(0..MODULUS);
             let t2 = rng.gen_range(0..1 << 30);
 
-            test_sub_mod!(t1, t2, ((t1 - t2) % MODULUS + MODULUS) % MODULUS, true);
-            test_sub_mod!(t1, t2, ((t1 - t2 + 1) % MODULUS + MODULUS) % MODULUS, false);
+            test_sub_mod!(
+                t1,
+                t2,
+                (((t1 as i32 - t2 as i32) % MODULUS as i32 + MODULUS as i32) as u32) % MODULUS,
+                true
+            );
+            test_sub_mod!(
+                t1,
+                t2,
+                (((t1 as i32 - t2 as i32 + 1) % MODULUS as i32 + MODULUS as i32) as u32) % MODULUS,
+                false
+            );
         }
         // assert!(false)
     }
@@ -614,22 +620,20 @@ mod tests {
                 .iter()
                 .map(|x| FpVar::<Fq>::new_witness(cs.clone(), || Ok(x)).unwrap())
                 .collect();
-            let const_q_var =
-                FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
+            let const_q_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
 
-            let num_instance_variables = cs.num_instance_variables();
-            let num_witness_variables = cs.num_witness_variables();
-            let num_constraints = cs.num_constraints();
+            // let num_instance_variables = cs.num_instance_variables();
+            // let num_witness_variables = cs.num_witness_variables();
+            // let num_constraints = cs.num_constraints();
 
-            let c_var =
-                inner_product_mod(cs.clone(), a_var.as_ref(), b_var.as_ref(), &const_q_var)
-                    .unwrap();
-            println!(
-                "number of variables {} {} and constraints {}\n",
-                cs.num_instance_variables() - num_instance_variables,
-                cs.num_witness_variables() - num_witness_variables,
-                cs.num_constraints() - num_constraints,
-            );
+            let c_var = inner_product_mod(cs.clone(), a_var.as_ref(), b_var.as_ref(), &const_q_var)
+                .unwrap();
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables() - num_instance_variables,
+            //     cs.num_witness_variables() - num_witness_variables,
+            //     cs.num_constraints() - num_constraints,
+            // );
 
             let c_var2 = FpVar::<Fq>::new_witness(cs.clone(), || Ok(c)).unwrap();
             c_var.enforce_equal(&c_var2).unwrap();
@@ -680,14 +684,13 @@ mod tests {
                             .collect::<Vec<FpVar<Fq>>>()
                     })
                     .collect();
-                let const_q_var =
-                    FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
+                let const_q_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(MODULUS)).unwrap();
 
                 let b_var_ref: Vec<&[FpVar<Fq>]> = b_var.iter().map(|x| x.as_ref()).collect();
 
-                let num_instance_variables = cs.num_instance_variables();
-                let num_witness_variables = cs.num_witness_variables();
-                let num_constraints = cs.num_constraints();
+                // let num_instance_variables = cs.num_instance_variables();
+                // let num_witness_variables = cs.num_witness_variables();
+                // let num_constraints = cs.num_constraints();
 
                 let c_var = vector_matrix_mul_mod(
                     cs.clone(),
@@ -696,12 +699,12 @@ mod tests {
                     &const_q_var,
                 )
                 .unwrap();
-                println!(
-                    "number of variables {} {} and constraints {}\n",
-                    cs.num_instance_variables() - num_instance_variables,
-                    cs.num_witness_variables() - num_witness_variables,
-                    cs.num_constraints() - num_constraints,
-                );
+                // println!(
+                //     "number of variables {} {} and constraints {}\n",
+                //     cs.num_instance_variables() - num_instance_variables,
+                //     cs.num_witness_variables() - num_witness_variables,
+                //     cs.num_constraints() - num_constraints,
+                // );
 
                 let c_var2: Vec<FpVar<Fq>> = c
                     .iter()

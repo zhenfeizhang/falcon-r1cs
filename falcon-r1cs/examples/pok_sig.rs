@@ -5,7 +5,7 @@ use ark_groth16::{create_random_proof, verify_proof, Groth16, PreparedVerifyingK
 use ark_snark::SNARK;
 use ark_std::rand::SeedableRng;
 use falcon_r1cs::FalconNTTVerificationCircuit;
-use falcon_rust::{hash_message, ntt, KeyPair,  };
+use falcon_rust::{hash_message, ntt, KeyPair};
 use rand_chacha::ChaCha20Rng;
 
 fn main() {

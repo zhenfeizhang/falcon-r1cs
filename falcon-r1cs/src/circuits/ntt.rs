@@ -27,11 +27,11 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         let sig_poly = self.sig.unpack();
         let pk_poly = self.pk.unpack();
         // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
-        let const_q_power_vars: Vec<FpVar<F>> = (1..11)
+        let const_q_power_vars: Vec<FpVar<F>> = (1..LOG_N + 2)
             .map(|x| {
                 FpVar::<F>::new_constant(
                     cs.clone(),
-                    F::from(1u32 << (x - 1)) * F::from(MODULUS).pow(&[x]),
+                    F::from(1u32 << (x - 1)) * F::from(MODULUS).pow(&[x as u64]),
                 )
                 .unwrap()
             })
@@ -77,7 +77,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
                 .collect();
             let uh_ntt = ntt(&uh_u32);
 
-            for i in 0..512 {
+            for i in 0..N {
                 // uh + hash(m) = v
                 assert_eq!((uh_ntt[i] + hm_ntt[i]) % MODULUS, v_ntt[i]);
                 // uh = pk * sig
@@ -206,12 +206,12 @@ mod tests {
         };
 
         falcon_circuit.generate_constraints(cs.clone()).unwrap();
-        println!(
-            "number of variables {} {} and constraints {}\n",
-            cs.num_instance_variables(),
-            cs.num_witness_variables(),
-            cs.num_constraints(),
-        );
+        // println!(
+        //     "number of variables {} {} and constraints {}\n",
+        //     cs.num_instance_variables(),
+        //     cs.num_witness_variables(),
+        //     cs.num_constraints(),
+        // );
 
         assert!(cs.is_satisfied().unwrap());
     }

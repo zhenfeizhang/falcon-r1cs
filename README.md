@@ -3,12 +3,47 @@ Falcon R1CS
 
 This crate generates the R1CS circuit for Falcon signature verifications.
 
+# Build
+
+To build for falcon-1024
+```
+    cargo build [--release]
+```
+
+
+To build for falcon-512
+```
+    cargo build [--release] --features=falcon-512 --no-default-features
+```
+
+# Example
+
+`falcon-r1cs/example/pok_sig.rs` shows an example of how to generate a proof of knowledge
+of the signature for Falcon. To run this example with Falcon-1024
+```
+cargo run --release --example pok_sig
+```
+with Falcon-512
+```
+cargo run --release --example pok_sig --no-default-features --features=falcon-512
+```
+
 # Performance
 
-The total #constraints for a single Falcon-512 signature verification is listed
+The total #constraints for a single Falcon-1024 signature verification is listed
 below. The table can be obtained via
 ```
 cargo run --release --example constraint_counts
+```
+
+                  # instance variables |      # witness |      #constraints |
+ntt conversion:                      0 |          29696 |             30720 |
+verify with ntt:                  2049 |         156724 |            162870 |
+verify with schoolbook:           2049 |        1150004 |           1156150 |
+
+That for Falcon-512 can be obtained via
+```
+cargo run --release --example constraint_counts --no-default-features --features=falcon-512
 ```
 
 |                 | # instance variables |      # witness |      #constraints |
