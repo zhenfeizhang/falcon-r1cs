@@ -2,7 +2,7 @@ use aggregated_signature_circuit::FalconAggregateSignatureCircuit;
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_crypto_primitives::SNARK;
 use ark_groth16::{create_random_proof, verify_proof, Groth16, PreparedVerifyingKey};
-use falcon_rust::{hash_message, ntt, KeyPair, PublicKey, SecretKey, Signature};
+use falcon_rust::{hash_message, ntt, KeyPair, PublicKey, SecretKey, Signature, N};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 pub struct FalconAggregateableSignatureScheme;
 
@@ -79,7 +79,7 @@ impl AggregateableSignature for FalconAggregateableSignatureScheme {
 
     /// Generate a pair of keys from a seed
     fn key_gen(seed: [u8; 32]) -> (Self::SigningKey, Self::VerificationKey) {
-        let keypair = KeyPair::keygen_with_seed(&seed, 9);
+        let keypair = KeyPair::keygen_with_seed(&seed);
         (keypair.secret_key, keypair.public_key)
     }
 
@@ -126,7 +126,7 @@ impl AggregateableSignature for FalconAggregateableSignatureScheme {
         let pvk = PreparedVerifyingKey::from(pp.vk.clone());
 
         // parse the input
-        let hm_ntts: Vec<[u32; 512]> = messages
+        let hm_ntts: Vec<[u32; N]> = messages
             .iter()
             .map(|msg| {
                 ntt(&hash_message(msg.as_ref(), [0; 40].as_ref())
@@ -136,7 +136,7 @@ impl AggregateableSignature for FalconAggregateableSignatureScheme {
             })
             .collect();
 
-        let vk_ntts: Vec<[u32; 512]> = vks
+        let vk_ntts: Vec<[u32; N]> = vks
             .iter()
             .map(|x| ntt(&x.unpack().iter().map(|x| *x as u32).collect::<Vec<u32>>()))
             .collect();
