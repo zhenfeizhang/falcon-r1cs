@@ -8,7 +8,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-falcon-rust = { git = "https://github.com/zhenfeizhang/falcon-rust" }
+falcon-rust = { git = "https://github.com/zhenfeizhang/falcon.rs", default-features = false, features = [ "falcon-512" ] }
 
 # Arkworks dependencies
 ark-ed-on-bls12-381 = { version = "0.3.0", default-features = false, features = ["r1cs"] }

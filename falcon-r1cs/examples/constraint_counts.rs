@@ -13,7 +13,7 @@ fn main() {
 }
 
 fn count_verify_with_schoolbook_constraints() {
-    let keypair = KeyPair::keygen(9);
+    let keypair = KeyPair::keygen();
     let message = "testing message".as_bytes();
     let sig = keypair
         .secret_key
@@ -44,7 +44,7 @@ fn count_verify_with_schoolbook_constraints() {
 }
 
 fn count_verify_with_ntt_constraints() {
-    let keypair = KeyPair::keygen(9);
+    let keypair = KeyPair::keygen();
     let message = "testing message".as_bytes();
     let sig = keypair
         .secret_key

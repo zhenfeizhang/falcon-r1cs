@@ -179,7 +179,7 @@ mod tests {
     use ark_relations::r1cs::ConstraintSystem;
     #[test]
     fn test_ntt_verification_r1cs() {
-        let keypair = KeyPair::keygen(9);
+        let keypair = KeyPair::keygen();
         let message = "testing message".as_bytes();
         let sig = keypair
             .secret_key
