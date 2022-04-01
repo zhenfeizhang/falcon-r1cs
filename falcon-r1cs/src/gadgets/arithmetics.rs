@@ -2,6 +2,7 @@ use super::*;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use falcon_rust::MODULUS;
 use num_bigint::BigUint;
 
 /// Generate the variables c = a * B mod 12289;
@@ -54,15 +55,24 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
     // than calling mul_mod iteratively
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        vec![F::one(); 512]
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        vec![F::one(); 512]
+    } else {
+        b.value()?
+    };
+
     let mut ab_val = a_val[0] * b_val[0];
     for (&a_i, &b_i) in a_val.iter().zip(b_val.iter()).skip(1) {
         ab_val += a_i * b_i;
     }
     let ab_int: BigUint = ab_val.into();
 
-    let modulus_int: BigUint = F::from(12289u64).into();
+    let modulus_int: BigUint = F::from(MODULUS).into();
     let t_int = &ab_int / &modulus_int;
     let c_int = &ab_int % &modulus_int;
 
@@ -84,7 +94,7 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
     left.enforce_equal(&c_var)?;
 
     // (2) c < 12289
-    enforce_less_than_12289(cs, &c_var)?;
+    enforce_less_than_q(cs, &c_var)?;
 
     Ok(c_var)
 }
@@ -108,10 +118,15 @@ pub(crate) fn mod_q<F: PrimeField>(
     // so we do not have any overflows
 
     // rebuild the field elements
-    let a_val = a.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+
     let a_int: BigUint = a_val.into();
 
-    let modulus_int: BigUint = F::from(12289u64).into();
+    let modulus_int: BigUint = F::from(MODULUS).into();
     let t_int = &a_int / &modulus_int;
     let b_int = &a_int % &modulus_int;
 
@@ -128,7 +143,7 @@ pub(crate) fn mod_q<F: PrimeField>(
     left.enforce_equal(&b_var)?;
 
     // (2) c < 12289
-    enforce_less_than_12289(cs, &b_var)?;
+    enforce_less_than_q(cs, &b_var)?;
 
     Ok(b_var)
 }
@@ -156,8 +171,17 @@ pub(crate) fn mul_mod<F: PrimeField>(
     // so we do not have any overflows
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        b.value()?
+    };
+
     let ab_val = a_val * b_val;
     let ab_int: BigUint = ab_val.into();
 
@@ -179,7 +203,7 @@ pub(crate) fn mul_mod<F: PrimeField>(
     left.enforce_equal(&c_var)?;
 
     // (2) c < 12289
-    enforce_less_than_12289(cs, &c_var)?;
+    enforce_less_than_q(cs, &c_var)?;
 
     Ok(c_var)
 }
@@ -200,12 +224,21 @@ pub(crate) fn add_mod<F: PrimeField>(
     // (2) c < 12289
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        b.value()?
+    };
+
     let ab_val = a_val + b_val;
     let ab_int: BigUint = ab_val.into();
 
-    let modulus_int: BigUint = F::from(12289u64).into();
+    let modulus_int: BigUint = F::from(MODULUS).into();
     let c_int = &ab_int % &modulus_int;
     let t_int = (&ab_int - &c_int) / &modulus_int;
 
@@ -223,7 +256,7 @@ pub(crate) fn add_mod<F: PrimeField>(
     left.enforce_equal(&c_var)?;
 
     // (2) c < 12289
-    enforce_less_than_12289(cs, &c_var)?;
+    enforce_less_than_q(cs, &c_var)?;
 
     Ok(c_var)
 }
@@ -243,13 +276,22 @@ pub(crate) fn sub_mod<F: PrimeField>(
     // that is b + c = a mod 12289
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        b.value()?
+    };
+
     let a_int: BigUint = a_val.into();
     let b_int: BigUint = b_val.into();
-    let modulus_int: BigUint = F::from(12289u64).into();
-    let b_mod_12289_int = &b_int % &modulus_int;
-    let c_int = (&a_int + &modulus_int - &b_mod_12289_int) % &modulus_int;
+    let modulus_int: BigUint = F::from(MODULUS).into();
+    let b_mod_q_int = &b_int % &modulus_int;
+    let c_int = (&a_int + &modulus_int - &b_mod_q_int) % &modulus_int;
 
     let c_val = F::from(c_int);
     let c_var = FpVar::<F>::new_witness(cs.clone(), || Ok(c_val))?;

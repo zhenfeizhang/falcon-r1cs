@@ -2,20 +2,29 @@ use super::*;
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+#[cfg(not(test))]
+use falcon_rust::MODULUS;
 
 /// Constraint that the witness of a is smaller than 12289
 /// Cost: 28 constraints.
 /// (This improves the range proof of 1264 constraints as in Arkworks.)
-pub(crate) fn enforce_less_than_12289<F: PrimeField>(
+pub(crate) fn enforce_less_than_q<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
 ) -> Result<(), SynthesisError> {
-    let a_val = a.value()?;
+    // if !cs.is_in_setup_mode(){
+    // println!("< norm 12289 satisfied? {:?}", cs.is_satisfied());
+    // }
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
 
     // suppressing this check so that unit test can test
     // bad paths
     #[cfg(not(test))]
-    if a_val >= F::from(12289u64) {
+    if a_val >= F::from(MODULUS) {
         panic!("Invalid input: {}", a_val);
     }
 
@@ -31,7 +40,7 @@ pub(crate) fn enforce_less_than_12289<F: PrimeField>(
     // ensure that a_bits are the bit decomposition of a
     enforce_decompose(a, a_bit_vars.as_ref())?;
 
-    // argue that a < 12289 = 2^13 + 2^12 + 1 via enforcing one of the following
+    // argue that a < MODULUS = 2^13 + 2^12 + 1 via enforcing one of the following
     // - either a[13] == 0, or
     // - a[13] == 1 and
     //      - either a[12] == 0
@@ -47,7 +56,9 @@ pub(crate) fn enforce_less_than_12289<F: PrimeField>(
             )?,
         )?
         .enforce_equal(&Boolean::TRUE)?;
-
+    // if !cs.is_in_setup_mode(){
+    // println!("< norm 12289 satisfied? {:?}", cs.is_satisfied());
+    // }
     Ok(())
 }
 /// Constraint that the witness of a is smaller than 34034726
@@ -59,8 +70,16 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
 ) -> Result<(), SynthesisError> {
     // the norm bound is 0b10000001110101010000100110 which is 26 bits, i.e.,
     // 2^25 + 2^18 + 2^17 + 2^16 + 2^14 + 2^ 12 + 2^10 + 2^5 + 2^2 + 2
+    // if !cs.is_in_setup_mode(){
 
-    let a_val = a.value()?;
+    //     println!("< norm cs satisfied? {:?}", cs.is_satisfied());
+
+    // }
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
 
     // suppressing this check so that unit test can test
     // bad paths
@@ -136,6 +155,9 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
             )?,
         )?.enforce_equal(&Boolean::TRUE)?;
 
+    //     if !cs.is_in_setup_mode(){
+    // println!("< norm cs satisfied? {:?}", cs.is_satisfied());
+    //     }
     Ok(())
 }
 
@@ -146,7 +168,13 @@ pub(crate) fn is_less_than_6144<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
 ) -> Result<Boolean<F>, SynthesisError> {
-    let a_val = a.value()?;
+    // println!("< norm 6144 satisfied? {:?}", cs.is_satisfied());
+
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
 
     // Note that the function returns a boolean and
     // the input a is allowed to be larger than 6144
@@ -168,14 +196,18 @@ pub(crate) fn is_less_than_6144<F: PrimeField>(
     // - either a[12] == 0 or a[11] == 0
 
     // a[13] == 0
-    (a_bit_vars[13].is_eq(&Boolean::FALSE)?)
+    let res = (a_bit_vars[13].is_eq(&Boolean::FALSE)?)
         // a[12] == 0
         .and(&a_bit_vars[12].is_eq(&Boolean::FALSE)?
             // a[11] == 0
         .   or(&a_bit_vars[11].is_eq(&Boolean::FALSE)?
             )?
         )?
-        .is_eq(&Boolean::TRUE)
+        .is_eq(&Boolean::TRUE);
+    //     if !cs.is_in_setup_mode(){
+    // println!("< norm 6144 satisfied? {:?}", cs.is_satisfied());
+    //     }
+    res
 }
 
 #[cfg(test)]
@@ -185,13 +217,13 @@ mod tests {
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng};
 
-    macro_rules! test_range_proof_12289 {
+    macro_rules! test_range_proof_mod_q {
         ($value: expr, $satisfied: expr) => {
             let cs = ConstraintSystem::<Fq>::new_ref();
             let a = Fq::from($value);
             let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
 
-            enforce_less_than_12289(cs.clone(), &a_var).unwrap();
+            enforce_less_than_q(cs.clone(), &a_var).unwrap();
             assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
             println!(
                 "number of variables {} {} and constraints {}\n",
@@ -202,36 +234,36 @@ mod tests {
         };
     }
     #[test]
-    fn test_range_proof_12289() {
+    fn test_range_proof_mod_q() {
         // =======================
         // good path
         // =======================
         // the meaning of life
-        test_range_proof_12289!(42, true);
+        test_range_proof_mod_q!(42, true);
 
         // edge case: 0
-        test_range_proof_12289!(0, true);
+        test_range_proof_mod_q!(0, true);
 
         // edge case: 2^12
-        test_range_proof_12289!(1 << 12, true);
+        test_range_proof_mod_q!(1 << 12, true);
 
         // edge case: 2^13
-        test_range_proof_12289!(1 << 13, true);
+        test_range_proof_mod_q!(1 << 13, true);
 
         // edge case: 12288
-        test_range_proof_12289!(12288, true);
+        test_range_proof_mod_q!(12288, true);
 
         // =======================
         // bad path
         // =======================
         // edge case: 12289
-        test_range_proof_12289!(12289, false);
+        test_range_proof_mod_q!(12289, false);
 
         // edge case: 12290
-        test_range_proof_12289!(12290, false);
+        test_range_proof_mod_q!(12290, false);
 
         // edge case: 12290
-        test_range_proof_12289!(122900000, false);
+        test_range_proof_mod_q!(122900000, false);
 
         // =======================
         // random path
@@ -239,7 +271,7 @@ mod tests {
         let mut rng = test_rng();
         for _ in 0..1000 {
             let t = rng.gen_range(0..1 << 15);
-            test_range_proof_12289!(t, t < 12289);
+            test_range_proof_mod_q!(t, t < 12289);
         }
 
         // // the following code prints out the
@@ -338,7 +370,7 @@ mod tests {
         // assert!(false)
     }
 
-    macro_rules! test_range_proof_6144 {
+    macro_rules! test_range_proof_half_q {
         ($value: expr, $satisfied: expr) => {
             let cs = ConstraintSystem::<Fq>::new_ref();
             let a = Fq::from($value);
@@ -356,30 +388,30 @@ mod tests {
         };
     }
     #[test]
-    fn test_range_proof_6144() {
+    fn test_range_proof_half_q() {
         // =======================
         // good path
         // =======================
         // the meaning of life
-        test_range_proof_6144!(42, true);
+        test_range_proof_half_q!(42, true);
 
         // edge case: 0
-        test_range_proof_6144!(0, true);
+        test_range_proof_half_q!(0, true);
 
         // edge case: 6143
-        test_range_proof_6144!(6143, true);
+        test_range_proof_half_q!(6143, true);
 
         // =======================
         // bad path
         // =======================
         // edge case: 6144
-        test_range_proof_6144!(6144, false);
+        test_range_proof_half_q!(6144, false);
 
         // edge case: 6145
-        test_range_proof_6144!(6145, false);
+        test_range_proof_half_q!(6145, false);
 
         // edge case: 12289
-        test_range_proof_6144!(12289, false);
+        test_range_proof_half_q!(12289, false);
 
         // =======================
         // random path
@@ -387,7 +419,7 @@ mod tests {
         let mut rng = test_rng();
         for _ in 0..1000 {
             let t = rng.gen_range(0..1 << 15);
-            test_range_proof_6144!(t, t < 6144);
+            test_range_proof_half_q!(t, t < 6144);
         }
 
         // // the following code prints out the
