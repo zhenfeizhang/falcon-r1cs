@@ -4,7 +4,7 @@ use super::*;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
-use falcon_rust::NTT_TABLE;
+use falcon_rust::{N, NTT_TABLE};
 
 /// The circuit to convert a poly into its NTT form
 /// Cost 15360 constraints.
@@ -19,13 +19,12 @@ pub fn ntt_circuit<F: PrimeField>(
     const_vars: &[FpVar<F>],
     param: &[FpVar<F>],
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    if input.len() != 512 {
-        panic!("input length {} is not 512", input.len())
+    if input.len() != N {
+        panic!("input length {} is not N", input.len())
     }
     let mut output = input.to_vec();
 
-    let n = 512;
-    let mut t = n;
+    let mut t = N;
     for l in 0..9 {
         let m = 1 << l;
         let ht = t / 2;
@@ -60,7 +59,7 @@ pub fn ntt_circuit<F: PrimeField>(
         }
         t = ht;
     }
-    
+
     // perform a final mod reduction to make the
     // output into the right range
     // this is the only place that we need non-native circuits
@@ -76,7 +75,7 @@ pub fn ntt_param_var<F: PrimeField>(
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     let mut res = Vec::new();
 
-    for e in NTT_TABLE[0..512].as_ref() {
+    for e in NTT_TABLE[0..N].as_ref() {
         res.push(FpVar::<F>::new_constant(cs.clone(), F::from(*e))?)
     }
 
@@ -89,7 +88,7 @@ pub(crate) fn inv_ntt_param_var<F: PrimeField>(
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {
     let mut res = Vec::new();
 
-    for e in NTT_TABLE[0..512].as_ref() {
+    for e in NTT_TABLE[0..N].as_ref() {
         res.push(FpVar::<F>::new_constant(cs.clone(), F::from(*e))?)
     }
 
@@ -123,7 +122,7 @@ mod tests {
                     .unwrap()
                 })
                 .collect();
-            let poly_u32 = (0..512)
+            let poly_u32 = (0..N)
                 .map(|_| rng.gen_range(0..12289))
                 .collect::<Vec<u32>>();
             let poly = poly_u32.iter().map(|x| Fq::from(*x)).collect::<Vec<Fq>>();
@@ -147,7 +146,7 @@ mod tests {
                 cs.num_constraints() - num_constraints,
             );
 
-            for i in 0..512 {
+            for i in 0..N {
                 assert_eq!(Fq::from(output[i]), output_var[i].value().unwrap())
             }
         }
