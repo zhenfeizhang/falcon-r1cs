@@ -4,14 +4,15 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result};
 use falcon_rust::*;
 
+#[derive(Clone, Debug)]
 pub struct FalconSchoolBookVerificationCircuit {
     pk: PublicKey,
-    msg: String,
+    msg: Vec<u8>,
     sig: Signature,
 }
 
 impl FalconSchoolBookVerificationCircuit {
-    pub fn build_circuit(pk: PublicKey, msg: String, sig: Signature) -> Self {
+    pub fn build_circuit(pk: PublicKey, msg: Vec<u8>, sig: Signature) -> Self {
         Self { pk, msg, sig }
     }
 }
@@ -30,7 +31,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
         // ========================================
         // compute related data in the clear
         // ========================================
-        let hm = hash_message(self.msg.as_bytes(), self.sig.nonce());
+        let hm = hash_message(self.msg.as_ref(), self.sig.nonce());
         // compute v = hm + uh and lift it to positives
         let uh = schoolbook_mul(&pk_poly, &sig_poly);
         let mut v_pos = [0i16; 512];
@@ -148,7 +149,7 @@ mod tests {
     #[test]
     fn test_schoolbook_verification_r1cs() {
         let keypair = KeyPair::keygen(9);
-        let message = "testing message";
+        let message = "testing message".as_bytes();
         let sig = keypair
             .secret_key
             .sign_with_seed("test seed".as_ref(), message.as_ref());
@@ -162,7 +163,7 @@ mod tests {
 
         let falcon_circuit = FalconSchoolBookVerificationCircuit {
             pk: keypair.public_key,
-            msg: message.to_string(),
+            msg: message.to_vec(),
             sig,
         };
 

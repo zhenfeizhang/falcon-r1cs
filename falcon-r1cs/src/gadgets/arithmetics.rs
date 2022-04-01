@@ -54,8 +54,17 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
     // than calling mul_mod iteratively
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+       vec![ F::one(); 512]
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        vec![ F::one(); 512]
+    } else {
+        b.value()?
+    };
+
     let mut ab_val = a_val[0] * b_val[0];
     for (&a_i, &b_i) in a_val.iter().zip(b_val.iter()).skip(1) {
         ab_val += a_i * b_i;
@@ -108,7 +117,12 @@ pub(crate) fn mod_q<F: PrimeField>(
     // so we do not have any overflows
 
     // rebuild the field elements
-    let a_val = a.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+
     let a_int: BigUint = a_val.into();
 
     let modulus_int: BigUint = F::from(12289u64).into();
@@ -156,8 +170,17 @@ pub(crate) fn mul_mod<F: PrimeField>(
     // so we do not have any overflows
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        b.value()?
+    };
+
     let ab_val = a_val * b_val;
     let ab_int: BigUint = ab_val.into();
 
@@ -200,8 +223,17 @@ pub(crate) fn add_mod<F: PrimeField>(
     // (2) c < 12289
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        b.value()?
+    };
+
     let ab_val = a_val + b_val;
     let ab_int: BigUint = ab_val.into();
 
@@ -243,8 +275,17 @@ pub(crate) fn sub_mod<F: PrimeField>(
     // that is b + c = a mod 12289
 
     // rebuild the field elements
-    let a_val = a.value()?;
-    let b_val = b.value()?;
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+    let b_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        b.value()?
+    };
+
     let a_int: BigUint = a_val.into();
     let b_int: BigUint = b_val.into();
     let modulus_int: BigUint = F::from(12289u64).into();

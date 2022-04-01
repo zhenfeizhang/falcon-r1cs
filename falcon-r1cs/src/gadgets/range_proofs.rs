@@ -10,7 +10,14 @@ pub(crate) fn enforce_less_than_12289<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
 ) -> Result<(), SynthesisError> {
-    let a_val = a.value()?;
+
+    println!("< norm 12289 satisfied? {:?}", cs.is_satisfied());
+
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
 
     // suppressing this check so that unit test can test
     // bad paths
@@ -47,7 +54,7 @@ pub(crate) fn enforce_less_than_12289<F: PrimeField>(
             )?,
         )?
         .enforce_equal(&Boolean::TRUE)?;
-
+        println!("< norm 12289 satisfied? {:?}", cs.is_satisfied());
     Ok(())
 }
 /// Constraint that the witness of a is smaller than 34034726
@@ -60,7 +67,13 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
     // the norm bound is 0b10000001110101010000100110 which is 26 bits, i.e.,
     // 2^25 + 2^18 + 2^17 + 2^16 + 2^14 + 2^ 12 + 2^10 + 2^5 + 2^2 + 2
 
-    let a_val = a.value()?;
+    println!("< norm cs satisfied? {:?}", cs.is_satisfied());
+
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
 
     // suppressing this check so that unit test can test
     // bad paths
@@ -136,6 +149,8 @@ pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
             )?,
         )?.enforce_equal(&Boolean::TRUE)?;
 
+
+    println!("< norm cs satisfied? {:?}", cs.is_satisfied());
     Ok(())
 }
 
@@ -146,7 +161,14 @@ pub(crate) fn is_less_than_6144<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
 ) -> Result<Boolean<F>, SynthesisError> {
-    let a_val = a.value()?;
+    println!("< norm 6144 satisfied? {:?}", cs.is_satisfied());
+
+
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
 
     // Note that the function returns a boolean and
     // the input a is allowed to be larger than 6144
@@ -168,7 +190,7 @@ pub(crate) fn is_less_than_6144<F: PrimeField>(
     // - either a[12] == 0 or a[11] == 0
 
     // a[13] == 0
-    (a_bit_vars[13].is_eq(&Boolean::FALSE)?)
+let res =     (a_bit_vars[13].is_eq(&Boolean::FALSE)?)
         // a[12] == 0
         .and(&a_bit_vars[12].is_eq(&Boolean::FALSE)?
             // a[11] == 0
@@ -176,6 +198,11 @@ pub(crate) fn is_less_than_6144<F: PrimeField>(
             )?
         )?
         .is_eq(&Boolean::TRUE)
+        ;
+
+    println!("< norm 6144 satisfied? {:?}", cs.is_satisfied());
+
+    res
 }
 
 #[cfg(test)]
