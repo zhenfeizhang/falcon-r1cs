@@ -7,13 +7,13 @@ This crate generates the R1CS circuit for Falcon signature verifications.
 
 To build for falcon-1024
 ```
-    cargo build [--release]
+cargo build [--release]
 ```
 
 
 To build for falcon-512
 ```
-    cargo build [--release] --features=falcon-512 --no-default-features
+cargo build [--release] --features=falcon-512 --no-default-features
 ```
 
 # Example
@@ -35,11 +35,11 @@ below. The table can be obtained via
 ```
 cargo run --release --example constraint_counts
 ```
-
-                  # instance variables |      # witness |      #constraints |
-ntt conversion:                      0 |          29696 |             30720 |
-verify with ntt:                  2049 |         156724 |            162870 |
-verify with schoolbook:           2049 |        1150004 |           1156150 |
+|            | # instance variables |      # witness |      #constraints |
+|---|---:|---:|---:|
+ntt conversion|                      0 |          29696 |             30720 |
+verify with ntt|                  2049 |         156724 |            162870 |
+verify with schoolbook|           2049 |        1150004 |           1156150 |
 
 That for Falcon-512 can be obtained via
 ```
