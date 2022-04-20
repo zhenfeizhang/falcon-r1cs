@@ -25,7 +25,7 @@ pub(crate) fn enforce_decompose<F: PrimeField>(
 // are positive between [0, 12289).
 // We need to firstly lift it to [-6144, 6144) and then
 // compute the norm.
-pub(crate) fn l2_norm_var<F: PrimeField>(
+pub fn l2_norm_var<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     input: &[FpVar<F>],
     modulus_var: &FpVar<F>,

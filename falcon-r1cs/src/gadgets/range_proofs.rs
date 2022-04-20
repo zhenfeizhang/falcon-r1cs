@@ -242,7 +242,7 @@ fn enforce_less_than_norm_bound_1024<F: PrimeField>(
     Ok(())
 }
 
-pub(crate) fn enforce_less_than_norm_bound<F: PrimeField>(
+pub fn enforce_less_than_norm_bound<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
 ) -> Result<(), SynthesisError> {

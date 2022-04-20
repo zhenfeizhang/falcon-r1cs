@@ -102,7 +102,7 @@ pub(crate) fn inner_product_mod<F: PrimeField>(
 /// Generate the variable b = a mod 12289;
 /// Cost: 30 constraints
 #[allow(dead_code)]
-pub(crate) fn mod_q<F: PrimeField>(
+pub fn mod_q<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
     a: &FpVar<F>,
     modulus_var: &FpVar<F>,

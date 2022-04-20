@@ -3,7 +3,7 @@ mod misc;
 mod ntt;
 mod range_proofs;
 
-pub(crate) use arithmetics::*;
-pub(crate) use misc::*;
+pub use arithmetics::*;
+pub use misc::*;
 pub use ntt::*;
-pub(crate) use range_proofs::*;
+pub use range_proofs::*;
