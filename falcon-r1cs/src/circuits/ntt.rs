@@ -44,9 +44,9 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         let hm = Polynomial::from_hash_of_message(self.msg.as_ref(), self.sig.nonce());
         let hm_ntt = NTTPolynomial::from(&hm);
 
-        // compute v = hm + uh and lift it to positives
+        // compute v = hm - uh and lift it to positives
         let uh = sig_poly * pk_poly;
-        let v = uh + hm;
+        let v = hm - uh;
 
         let pk_ntt = NTTPolynomial::from(&pk_poly);
 
@@ -66,7 +66,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         //  also a public input; do not need range proof
         let hm_ntt_vars = NTTPolyVar::<F>::alloc_vars(cs.clone(), &hm_ntt, AllocationMode::Input)?;
 
-        // v := hm + sig * pk, over Z
+        // v := hm - sig * pk, over Z
         //  a private input to the circuit; require a range proof
         let v_vars = PolyVar::<F>::alloc_vars(cs.clone(), &v, AllocationMode::Witness)?;
 
@@ -91,7 +91,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
 
         // second, prove the equation holds in the ntt domain
         for i in 0..N {
-            // v[i] = hm[i] + sig[i] * pk[i] % MODULUS
+            // hm[i] = v[i] + sig[i] * pk[i] % MODULUS
 
             // println!(
             //     "{:?} {:?} {:?} {:?}",
@@ -100,10 +100,10 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
             //     sig_ntt_vars[i].value()?.into_repr(),
             //     pk_ntt_vars[i].value()?.into_repr(),
             // );
-
-            v_ntt_vars.coeff()[i].enforce_equal(&add_mod(
+            
+            hm_ntt_vars   .coeff()[i].enforce_equal(&add_mod(
                 cs.clone(),
-                &hm_ntt_vars.coeff()[i],
+                &v_ntt_vars.coeff()[i],
                 &(&sig_ntt_vars.coeff()[i] * &pk_ntt_vars.coeff()[i]),
                 &const_q_power_vars[0],
             )?)?;

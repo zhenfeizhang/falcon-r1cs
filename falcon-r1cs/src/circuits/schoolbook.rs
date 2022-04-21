@@ -34,9 +34,9 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
         // ========================================
         let hm = Polynomial::from_hash_of_message(self.msg.as_ref(), self.sig.nonce());
 
-        // compute v = hm + uh and lift it to positives
+        // compute v = hm - uh and lift it to positives
         let uh = sig_poly * pk_poly;
-        let v = uh + hm;
+        let v = hm - uh;
 
         // ========================================
         // allocate the variables with range checks
@@ -103,7 +103,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
         buf_poly_poly_vars.reverse();
 
         for i in 0..N {
-            // current_col = sig * pk[i]
+            // current_col = sig * pk[i] mod q
             let current_col = inner_product_mod(
                 cs.clone(),
                 sig_poly_vars.as_ref(),
@@ -111,8 +111,8 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
                 &const_q_var,
             )?;
 
-            // right = hm + sig * pk[i]
-            let rhs = &hm_vars[i] + &current_col;
+            // rhs = hm + q - sig * pk[i] mod q
+            let rhs = &hm_vars[i] + &const_q_var - &current_col;
 
             // v = rhs mod MODULUS
             (((&rhs).is_eq(&v_pos_vars[i])?)
