@@ -1,5 +1,9 @@
 use ark_ed_on_bls12_381::fq::Fq;
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    fields::fp::FpVar,
+    R1CSVar,
+};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, Field};
 use ark_std::test_rng;
 use falcon_r1cs::*;
@@ -72,15 +76,7 @@ fn count_ntt_conversion_constraints() {
     let cs = ConstraintSystem::<Fq>::new_ref();
     let param_var = ntt_param_var(cs.clone()).unwrap();
     let poly = Polynomial::rand(&mut rng);
-    let poly_fq = poly
-        .coeff()
-        .iter()
-        .map(|x| Fq::from(*x))
-        .collect::<Vec<Fq>>();
-    let poly_var: Vec<FpVar<Fq>> = poly_fq
-        .iter()
-        .map(|x| FpVar::<Fq>::new_witness(cs.clone(), || Ok(*x)).unwrap())
-        .collect();
+    let poly_var = PolyVar::<Fq>::alloc_vars(cs.clone(), &poly, AllocationMode::Witness).unwrap();
 
     // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
     let const_mod_q_vars: Vec<FpVar<Fq>> = (1..LOG_N + 2)
@@ -107,6 +103,9 @@ fn count_ntt_conversion_constraints() {
     );
 
     for i in 0..N {
-        assert_eq!(Fq::from(output.coeff()[i]), output_var[i].value().unwrap())
+        assert_eq!(
+            Fq::from(output.coeff()[i]),
+            output_var.coeff()[i].value().unwrap()
+        )
     }
 }

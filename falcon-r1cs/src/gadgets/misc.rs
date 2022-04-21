@@ -4,7 +4,7 @@ use ark_r1cs_std::{fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 
 /// Constraint that a = bits[0] + 2 bits[1] + 2^2 bits[2] ...
-pub(crate) fn enforce_decompose<F: PrimeField>(
+pub fn enforce_decompose<F: PrimeField>(
     a: &FpVar<F>,
     bits: &[Boolean<F>],
 ) -> Result<(), SynthesisError> {

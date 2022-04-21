@@ -53,45 +53,27 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // ========================================
         // allocate the variables with range checks
         // ========================================
-        // signature
-        let mut sig_poly_vars = Vec::new();
-        for &e in sig_poly.coeff() {
-            let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(e)))?;
+        // signature, over Z
+        //  a private input to the circuit; a range proof will be done later
+        let sig_poly_vars =
+            PolyVar::<F>::alloc_vars(cs.clone(), &sig_poly, AllocationMode::Witness)?;
 
-            // ensure all the sig inputs are smaller than MODULUS
-            // Note that this step is not necessary: we will be checking
-            // the l2-norm of \|sig | v\| < 34034726. If any
-            // coefficient of sig is greater than MODULUS, we will have
-            // a l2-norm that is at least > MODULUS^2 which is greater
-            // than 34034726 and cause the circuit to be unsatisfied.
-            //
-            // enforce_less_than_q(cs.clone(), &tmp)?;
-            sig_poly_vars.push(tmp);
-        }
-        // pk, in the NTT form
-        //
-        let mut pk_ntt_vars = Vec::new();
-        for &e in pk_ntt.coeff() {
-            // do not need to ensure the pk inputs are smaller than MODULUS
-            // pk is public input, so the verifier can check in the clear
-            pk_ntt_vars.push(FpVar::<F>::new_input(cs.clone(), || Ok(F::from(e)))?);
-        }
-        // hash of message in the NTT format
-        // public input
-        let mut hm_ntt_vars = Vec::new();
-        for e in hm_ntt.coeff() {
-            // do not need to ensure the hm inputs are smaller than MODULUS
-            // hm is public input, does not need to keep secret
-            hm_ntt_vars.push(FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?);
-        }
-        // v with positive coefficients
-        let mut v_pos_vars = Vec::new();
-        for e in v.coeff() {
+        // pk, in NTT domain
+        //  a public input to the circuit; do not need range proof
+        let pk_ntt_vars = NTTPolyVar::<F>::alloc_vars(cs.clone(), &pk_ntt, AllocationMode::Input)?;
+
+        // hash of message, in NTT domain
+        //  also a public input; do not need range proof
+        let hm_ntt_vars = NTTPolyVar::<F>::alloc_vars(cs.clone(), &hm_ntt, AllocationMode::Input)?;
+
+        // v := hm + sig * pk, over Z
+        //  a private input to the circuit; require a range proof
+        let v_vars = PolyVar::<F>::alloc_vars(cs.clone(), &v, AllocationMode::Witness)?;
+
+        for e in v_vars.coeff() {
             // ensure all the v inputs are smaller than MODULUS
             // v will need to be kept secret
-            let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*e)))?;
-            enforce_less_than_q(cs.clone(), &tmp)?;
-            v_pos_vars.push(tmp);
+            enforce_less_than_q(cs.clone(), &e)?;
         }
         // ========================================
         // proving v = hm + sig * pk mod MODULUS
@@ -105,7 +87,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         //  v_ntt_vars = ntt_circuit(v_vars)
         let sig_ntt_vars =
             ntt_circuit(cs.clone(), &sig_poly_vars, &const_q_power_vars, &param_vars)?;
-        let v_ntt_vars = ntt_circuit(cs.clone(), &v_pos_vars, &const_q_power_vars, &param_vars)?;
+        let v_ntt_vars = ntt_circuit(cs.clone(), &v_vars, &const_q_power_vars, &param_vars)?;
 
         // second, prove the equation holds in the ntt domain
         for i in 0..N {
@@ -119,10 +101,10 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
             //     pk_ntt_vars[i].value()?.into_repr(),
             // );
 
-            v_ntt_vars[i].enforce_equal(&add_mod(
+            v_ntt_vars.coeff()[i].enforce_equal(&add_mod(
                 cs.clone(),
-                &hm_ntt_vars[i],
-                &(&sig_ntt_vars[i] * &pk_ntt_vars[i]),
+                &hm_ntt_vars.coeff()[i],
+                &(&sig_ntt_vars.coeff()[i] * &pk_ntt_vars.coeff()[i]),
                 &const_q_power_vars[0],
             )?)?;
         }
@@ -132,7 +114,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // ========================================
         let l2_norm_var = l2_norm_var(
             cs.clone(),
-            &[v_pos_vars, sig_poly_vars].concat(),
+            &[v_vars.coeff(), sig_poly_vars.coeff()].concat(),
             &const_q_power_vars[0],
         )?;
 

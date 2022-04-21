@@ -15,14 +15,14 @@ use falcon_rust::{LOG_N, N, NTT_TABLE};
 /// - param: the forward NTT table in wire format
 pub fn ntt_circuit<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
-    input: &[FpVar<F>],
+    input: &PolyVar<F>,
     const_vars: &[FpVar<F>],
     param: &[FpVar<F>],
-) -> Result<Vec<FpVar<F>>, SynthesisError> {
-    if input.len() != N {
-        panic!("input length {} is not N", input.len())
+) -> Result<NTTPolyVar<F>, SynthesisError> {
+    if input.coeff().len() != N {
+        panic!("input length {} is not N", input.coeff().len())
     }
-    let mut output = input.to_vec();
+    let mut output = input.coeff().to_vec();
 
     let mut t = N;
     for l in 0..LOG_N {
@@ -67,7 +67,7 @@ pub fn ntt_circuit<F: PrimeField>(
         *e = mod_q(cs.clone(), e, &const_vars[0])?;
     }
 
-    Ok(output)
+    Ok(NTTPolyVar(output.to_vec()))
 }
 
 pub fn ntt_param_var<F: PrimeField>(
@@ -123,15 +123,12 @@ mod tests {
                 })
                 .collect();
             let poly = Polynomial::rand(&mut rng);
-            let poly_fq = poly
-                .coeff()
-                .iter()
-                .map(|x| Fq::from(*x))
-                .collect::<Vec<Fq>>();
-            let poly_var: Vec<FpVar<Fq>> = poly_fq
-                .iter()
-                .map(|x| FpVar::<Fq>::new_witness(cs.clone(), || Ok(*x)).unwrap())
-                .collect();
+            let poly_var = PolyVar::<Fq>::alloc_vars(
+                cs.clone(),
+                &poly,
+                ark_r1cs_std::alloc::AllocationMode::Witness,
+            )
+            .unwrap();
 
             let output = NTTPolynomial::from(&poly);
 
@@ -149,7 +146,10 @@ mod tests {
             // );
 
             for i in 0..N {
-                assert_eq!(Fq::from(output.coeff()[i]), output_var[i].value().unwrap())
+                assert_eq!(
+                    Fq::from(output.coeff()[i]),
+                    output_var.coeff()[i].value().unwrap()
+                )
             }
         }
 
