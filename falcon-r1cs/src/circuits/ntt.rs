@@ -100,8 +100,8 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
             //     sig_ntt_vars[i].value()?.into_repr(),
             //     pk_ntt_vars[i].value()?.into_repr(),
             // );
-            
-            hm_ntt_vars   .coeff()[i].enforce_equal(&add_mod(
+
+            hm_ntt_vars.coeff()[i].enforce_equal(&add_mod(
                 cs.clone(),
                 &v_ntt_vars.coeff()[i],
                 &(&sig_ntt_vars.coeff()[i] * &pk_ntt_vars.coeff()[i]),

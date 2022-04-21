@@ -38,6 +38,11 @@ impl<F: PrimeField> Mul for NTTPolyVar<F> {
 }
 
 impl<F: PrimeField> NTTPolyVar<F> {
+    /// build a new instances from inputs
+    pub fn new(coeff: Vec<FpVar<F>>) -> Self {
+        Self(coeff)
+    }
+
     // allocate variables for a give ntt_polynomial
     pub fn alloc_vars(
         cs: impl Into<Namespace<F>>,
@@ -117,7 +122,12 @@ impl<F: PrimeField> Mul for PolyVar<F> {
 }
 
 impl<F: PrimeField> PolyVar<F> {
-    // allocate variables for a give ntt_polynomial
+    /// build a new instances from inputs
+    pub fn new(coeff: Vec<FpVar<F>>) -> Self {
+        Self(coeff)
+    }
+
+    // allocate variables for a give polynomial
     pub fn alloc_vars(
         cs: impl Into<Namespace<F>>,
         poly: &Polynomial,
