@@ -12,7 +12,7 @@ falcon-rust = { git = "https://github.com/zhenfeizhang/falcon.rs", default-featu
 
 # Arkworks dependencies
 ark-ed-on-bls12-381 = { version = "0.3.0", default-features = false, features = ["r1cs"] }
-ark-ff = { version = "0.3.0", default-features = false }
+ark-ff = { version = "0.3.0", default-features = false, features = [ "parallel" ] }
 ark-groth16 = { version = "0.3.0", default-features = false, features = [ "r1cs", "parallel" ] }
 ark-r1cs-std = { version = "0.3.1", default-features = false }
 ark-relations = { version = "0.3.0", default-features = false }
