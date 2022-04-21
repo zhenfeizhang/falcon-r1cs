@@ -1,9 +1,9 @@
 use ark_ed_on_bls12_381::fq::Fq;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, Field};
-use ark_std::{rand::Rng, test_rng};
+use ark_std::test_rng;
 use falcon_r1cs::*;
-use falcon_rust::{ntt, *};
+use falcon_rust::*;
 
 fn main() {
     println!("                  # instance variables |      # witness |      #constraints |");
@@ -20,9 +20,7 @@ fn count_verify_with_schoolbook_constraints() {
         .sign_with_seed("test seed".as_ref(), message.as_ref());
 
     assert!(keypair.public_key.verify(message.as_ref(), &sig));
-    assert!(keypair
-        .public_key
-        .verify_rust_native_schoolbook(message.as_ref(), &sig));
+    assert!(keypair.public_key.verify_rust(message.as_ref(), &sig));
 
     let cs = ConstraintSystem::<Fq>::new_ref();
 
@@ -51,12 +49,7 @@ fn count_verify_with_ntt_constraints() {
         .sign_with_seed("test seed".as_ref(), message.as_ref());
 
     assert!(keypair.public_key.verify(message.as_ref(), &sig));
-    assert!(keypair
-        .public_key
-        .verify_rust_native_schoolbook(message.as_ref(), &sig));
-    assert!(keypair
-        .public_key
-        .verify_rust_native_ntt(message.as_ref(), &sig));
+    assert!(keypair.public_key.verify_rust(message.as_ref(), &sig));
 
     let cs = ConstraintSystem::<Fq>::new_ref();
 
@@ -78,11 +71,13 @@ fn count_ntt_conversion_constraints() {
 
     let cs = ConstraintSystem::<Fq>::new_ref();
     let param_var = ntt_param_var(cs.clone()).unwrap();
-    let poly_u32 = (0..N)
-        .map(|_| rng.gen_range(0..MODULUS))
-        .collect::<Vec<u32>>();
-    let poly = poly_u32.iter().map(|x| Fq::from(*x)).collect::<Vec<Fq>>();
-    let poly_var: Vec<FpVar<Fq>> = poly
+    let poly = Polynomial::rand(&mut rng);
+    let poly_fq = poly
+        .coeff()
+        .iter()
+        .map(|x| Fq::from(*x))
+        .collect::<Vec<Fq>>();
+    let poly_var: Vec<FpVar<Fq>> = poly_fq
         .iter()
         .map(|x| FpVar::<Fq>::new_witness(cs.clone(), || Ok(*x)).unwrap())
         .collect();
@@ -97,7 +92,7 @@ fn count_ntt_conversion_constraints() {
             .unwrap()
         })
         .collect();
-    let output = ntt(poly_u32.as_ref());
+    let output = NTTPolynomial::from(&poly);
 
     let num_instance_variables = cs.num_instance_variables();
     let num_witness_variables = cs.num_witness_variables();
@@ -112,6 +107,6 @@ fn count_ntt_conversion_constraints() {
     );
 
     for i in 0..N {
-        assert_eq!(Fq::from(output[i]), output_var[i].value().unwrap())
+        assert_eq!(Fq::from(output.coeff()[i]), output_var[i].value().unwrap())
     }
 }

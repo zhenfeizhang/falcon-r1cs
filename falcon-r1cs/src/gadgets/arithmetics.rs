@@ -366,8 +366,8 @@ mod tests {
         for _ in 0..1000 {
             let t = rng.gen_range(0..1 << 30);
 
-            test_mod_q!(t, t % MODULUS, true);
-            test_mod_q!(t, (t + 1) % MODULUS, false);
+            test_mod_q!(t, t % MODULUS as u32, true);
+            test_mod_q!(t, (t + 1) % MODULUS as u32, false);
         }
         // assert!(false)
     }
@@ -500,8 +500,8 @@ mod tests {
         for _ in 0..1000 {
             let t1 = rng.gen_range(0..1 << 30);
             let t2 = rng.gen_range(0..1 << 30);
-            test_add_mod!(t1, t2, (t1 + t2) % MODULUS, true);
-            test_add_mod!(t1, t2, (t1 + t2 + 1) % MODULUS, false);
+            test_add_mod!(t1, t2, (t1 + t2) % MODULUS as u32, true);
+            test_add_mod!(t1, t2, (t1 + t2 + 1) % MODULUS as u32, false);
         }
         // assert!(false)
     }
@@ -576,13 +576,13 @@ mod tests {
             test_sub_mod!(
                 t1,
                 t2,
-                (((t1 as i32 - t2 as i32) % MODULUS as i32 + MODULUS as i32) as u32) % MODULUS,
+                (((t1 as i32 - t2 as i32) % MODULUS as i32 + MODULUS as i32) as u16) % MODULUS,
                 true
             );
             test_sub_mod!(
                 t1,
                 t2,
-                (((t1 as i32 - t2 as i32 + 1) % MODULUS as i32 + MODULUS as i32) as u32) % MODULUS,
+                (((t1 as i32 - t2 as i32 + 1) % MODULUS as i32 + MODULUS as i32) as u16) % MODULUS,
                 false
             );
         }

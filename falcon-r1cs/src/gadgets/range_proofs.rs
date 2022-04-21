@@ -357,7 +357,7 @@ mod tests {
         test_range_proof_mod_q!(MODULUS + 1, false);
 
         // edge case: 122890000
-        test_range_proof_mod_q!(MODULUS * 10000, false);
+        test_range_proof_mod_q!(MODULUS as u32 * 10000, false);
 
         // =======================
         // random path

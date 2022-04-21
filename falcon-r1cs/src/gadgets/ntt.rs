@@ -102,8 +102,8 @@ mod tests {
     use ark_ff::Field;
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
-    use ark_std::{rand::Rng, test_rng};
-    use falcon_rust::{ntt, MODULUS};
+    use ark_std::test_rng;
+    use falcon_rust::{NTTPolynomial, Polynomial, MODULUS};
 
     #[test]
     fn test_ntt_mul_circuit() {
@@ -122,16 +122,18 @@ mod tests {
                     .unwrap()
                 })
                 .collect();
-            let poly_u32 = (0..N)
-                .map(|_| rng.gen_range(0..MODULUS))
-                .collect::<Vec<u32>>();
-            let poly = poly_u32.iter().map(|x| Fq::from(*x)).collect::<Vec<Fq>>();
-            let poly_var: Vec<FpVar<Fq>> = poly
+            let poly = Polynomial::rand(&mut rng);
+            let poly_fq = poly
+                .coeff()
+                .iter()
+                .map(|x| Fq::from(*x))
+                .collect::<Vec<Fq>>();
+            let poly_var: Vec<FpVar<Fq>> = poly_fq
                 .iter()
                 .map(|x| FpVar::<Fq>::new_witness(cs.clone(), || Ok(*x)).unwrap())
                 .collect();
 
-            let output = ntt(poly_u32.as_ref());
+            let output = NTTPolynomial::from(&poly);
 
             // let num_instance_variables = cs.num_instance_variables();
             // let num_witness_variables = cs.num_witness_variables();
@@ -147,7 +149,7 @@ mod tests {
             // );
 
             for i in 0..N {
-                assert_eq!(Fq::from(output[i]), output_var[i].value().unwrap())
+                assert_eq!(Fq::from(output.coeff()[i]), output_var[i].value().unwrap())
             }
         }
 

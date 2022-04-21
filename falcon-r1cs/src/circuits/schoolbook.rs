@@ -24,35 +24,27 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
     /// - v = hm - sig * pk
     /// - l2_norm(sig, v) < SIG_L2_BOUND = 34034726
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<()> {
-        let sig_poly = self.sig.unpack();
-        let pk_poly = self.pk.unpack();
+        let sig_poly: Polynomial = (&self.sig).into();
+        let pk_poly: Polynomial = (&self.pk).into();
+
         let const_q_var = FpVar::<F>::new_constant(cs.clone(), F::from(MODULUS))?;
 
         // ========================================
         // compute related data in the clear
         // ========================================
-        let hm = hash_message(self.msg.as_ref(), self.sig.nonce());
+        let hm = Polynomial::from_hash_of_message(self.msg.as_ref(), self.sig.nonce());
+
         // compute v = hm + uh and lift it to positives
-        let uh = schoolbook_mul(&pk_poly, &sig_poly);
-        let mut v_pos = [0i16; N];
-
-        for (c, (&a, &b)) in v_pos.iter_mut().zip(uh.iter().zip(hm.iter())) {
-            let c_i32 = (b as i32) + (a as i32);
-            *c = (c_i32 % MODULUS as i32) as i16;
-
-            if *c < 0 {
-                *c += MODULUS as i16
-            }
-        }
+        let uh = sig_poly * pk_poly;
+        let v = uh + hm;
 
         // ========================================
         // allocate the variables with range checks
         // ========================================
         // signature
         let mut sig_poly_vars = Vec::new();
-        for e in sig_poly {
-            let e = if e < 0 { e + MODULUS as i16 } else { e } as u16;
-            let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(e)))?;
+        for e in sig_poly.coeff() {
+            let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*e)))?;
 
             // ensure all the sig inputs are smaller than MODULUS
             // Note that this step is not necessary: we will be checking
@@ -72,10 +64,10 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
         // column in inner-product calculation
         let mut pk_poly_vars = Vec::new();
         let mut neg_pk_poly_vars = Vec::new();
-        for e in pk_poly {
+        for e in pk_poly.coeff() {
             // do not need to ensure the pk inputs are smaller than MODULUS
             // pk is public input, so the verifier can check in the clear
-            let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(e)))?;
+            let tmp = FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?;
             // It is implied that all the neg_pk inputs are smaller than MODULUS
             neg_pk_poly_vars.push(&const_q_var - &tmp);
             pk_poly_vars.push(tmp);
@@ -83,7 +75,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
 
         // hash of message
         let mut hm_vars = Vec::new();
-        for e in hm.iter() {
+        for e in hm.coeff() {
             // do not need to ensure the hm inputs are smaller than MODULUS
             // hm is public input, does not need to keep secret
             hm_vars.push(FpVar::<F>::new_input(cs.clone(), || Ok(F::from(*e)))?);
@@ -91,10 +83,10 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconSchoolBookVerificationCir
 
         // v with positive coefficients
         let mut v_pos_vars = Vec::new();
-        for e in v_pos {
+        for e in v.coeff() {
             // ensure all the v inputs are smaller than MODULUS
             // v will need to be kept secret
-            let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(e as u16)))?;
+            let tmp = FpVar::<F>::new_witness(cs.clone(), || Ok(F::from(*e)))?;
             enforce_less_than_q(cs.clone(), &tmp)?;
             v_pos_vars.push(tmp);
         }
@@ -155,9 +147,7 @@ mod tests {
             .sign_with_seed("test seed".as_ref(), message.as_ref());
 
         assert!(keypair.public_key.verify(message.as_ref(), &sig));
-        assert!(keypair
-            .public_key
-            .verify_rust_native_schoolbook(message.as_ref(), &sig));
+        assert!(keypair.public_key.verify_rust(message.as_ref(), &sig));
 
         let cs = ConstraintSystem::<Fq>::new_ref();
 
