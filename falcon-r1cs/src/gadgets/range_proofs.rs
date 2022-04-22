@@ -7,6 +7,35 @@ use falcon_rust::MODULUS;
 #[cfg(not(test))]
 use falcon_rust::SIG_L2_BOUND;
 
+/// Enforce the input is less than 1024 or not
+/// Cost: 15 constraints.
+/// (This improves the range proof of 1264 constraints as in Arkworks.)
+pub fn enforce_less_than_1024<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+    a: &FpVar<F>,
+) -> Result<(), SynthesisError> {
+    let a_val = if cs.is_in_setup_mode() {
+        F::one()
+    } else {
+        a.value()?
+    };
+
+    // Note that the function returns a boolean and
+    // the input a is allowed to be larger than 768
+
+    let a_bits = a_val.into_repr().to_bits_le();
+    // a_bit_vars is the least 10 bits of a
+    // (we only care for the first 10 bits of a_bits)
+    let a_bit_vars = a_bits
+        .iter()
+        .take(10)
+        .map(|x| Boolean::new_witness(cs.clone(), || Ok(x)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // ensure that a_bits are the bit decomposition of a
+    enforce_decompose(a, a_bit_vars.as_ref())
+}
+
 /// Constraint that the witness of a is smaller than 12289
 /// Cost: 28 constraints.
 /// (This improves the range proof of 1264 constraints as in Arkworks.)
@@ -534,6 +563,77 @@ mod tests {
         //     let a_var = FpVar::<Fq>::new_witness(cs.clone(), ||
         // Ok(a)).unwrap();     let b_var =
         // FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289)).unwrap();
+        //     a_var
+        //         .enforce_cmp(&b_var, std::cmp::Ordering::Less, false)
+        //         .unwrap();
+        //     println!(
+        //         "number of variables {} {} and constraints {}\n",
+        //         cs.num_instance_variables(),
+        //         cs.num_witness_variables(),
+        //         cs.num_constraints(),
+        //     );
+        // }
+        // assert!(false)
+    }
+
+    macro_rules! enforce_less_than_1024 {
+        ($value: expr, $satisfied: expr) => {
+            let cs = ConstraintSystem::<Fq>::new_ref();
+            let a = Fq::from($value);
+            let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
+
+            enforce_less_than_1024(cs.clone(), &a_var).unwrap();
+            assert_eq!(cs.is_satisfied().unwrap(), $satisfied);
+            // println!(
+            //     "number of variables {} {} and constraints {}\n",
+            //     cs.num_instance_variables(),
+            //     cs.num_witness_variables(),
+            //     cs.num_constraints(),
+            // );
+        };
+    }
+    #[test]
+    fn test_enforce_less_than_1024() {
+        // =======================
+        // good path
+        // =======================
+        // the meaning of life
+        enforce_less_than_1024!(42, true);
+
+        // edge case: 0
+        enforce_less_than_1024!(0, true);
+
+        // edge case: 1023
+        enforce_less_than_1024!(1023, true);
+
+        // =======================
+        // bad path
+        // =======================
+        // edge case: 1024
+        enforce_less_than_1024!(1024, false);
+
+        // edge case: 1025
+        enforce_less_than_1024!(1025, false);
+
+        // edge case: 12289
+        enforce_less_than_1024!(MODULUS, false);
+
+        // =======================
+        // random path
+        // =======================
+        let mut rng = test_rng();
+        for _ in 0..1000 {
+            let t = rng.gen_range(0..2048);
+            enforce_less_than_1024!(t, t < 1024);
+        }
+
+        // // the following code prints out the
+        // // cost for arkworks native range proof
+        // {
+        //     let cs = ConstraintSystem::<Fq>::new_ref();
+        //     let a = Fq::from(42);
+        //     let a_var = FpVar::<Fq>::new_witness(cs.clone(), || Ok(a)).unwrap();
+        //     let b_var = FpVar::<Fq>::new_constant(cs.clone(), Fq::from(12289)).unwrap();
         //     a_var
         //         .enforce_cmp(&b_var, std::cmp::Ordering::Less, false)
         //         .unwrap();

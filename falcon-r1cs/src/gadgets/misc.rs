@@ -1,7 +1,9 @@
-use super::*;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use falcon_rust::{N, NTT_TABLE};
+
+use crate::is_less_than_6144;
 
 /// Constraint that a = bits[0] + 2 bits[1] + 2^2 bits[2] ...
 pub fn enforce_decompose<F: PrimeField>(
@@ -21,7 +23,7 @@ pub fn enforce_decompose<F: PrimeField>(
     Ok(())
 }
 
-// compute the l2 norm of vector a where a's coefficients
+// compute the l2 norm of polynomial a where a's coefficients
 // are positive between [0, 12289).
 // We need to firstly lift it to [-6144, 6144) and then
 // compute the norm.
@@ -43,6 +45,30 @@ pub fn l2_norm_var<F: PrimeField>(
             &(modulus_var - e),
         )?;
         res += &tmp * &tmp
+    }
+
+    Ok(res)
+}
+pub fn ntt_param_var<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+) -> Result<Vec<FpVar<F>>, SynthesisError> {
+    let mut res = Vec::new();
+
+    for e in NTT_TABLE[0..N].as_ref() {
+        res.push(FpVar::<F>::new_constant(cs.clone(), F::from(*e))?)
+    }
+
+    Ok(res)
+}
+
+#[allow(dead_code)]
+pub(crate) fn inv_ntt_param_var<F: PrimeField>(
+    cs: ConstraintSystemRef<F>,
+) -> Result<Vec<FpVar<F>>, SynthesisError> {
+    let mut res = Vec::new();
+
+    for e in NTT_TABLE[0..N].as_ref() {
+        res.push(FpVar::<F>::new_constant(cs.clone(), F::from(*e))?)
     }
 
     Ok(res)

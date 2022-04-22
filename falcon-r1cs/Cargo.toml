@@ -26,6 +26,7 @@ rand_chacha = { version = "0.3.0", default-features = false }
 ark-bls12-381 = { version = "0.3.0", default-features = false, features = ["curve"] }
 
 [features]
-default = [ "falcon-1024" ]
+default = [ "falcon-1024", "parallel" ]
 falcon-512 = [ "falcon-rust/falcon-512" ]
 falcon-1024 = [ "falcon-rust/falcon-1024" ]
+parallel = [ ]

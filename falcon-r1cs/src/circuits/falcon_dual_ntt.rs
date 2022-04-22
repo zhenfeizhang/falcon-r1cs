@@ -5,26 +5,26 @@ use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Result};
 use falcon_rust::*;
 
 #[derive(Clone, Debug)]
-pub struct FalconNTTVerificationCircuit {
+pub struct FalconDualNTTVerificationCircuit {
     pk: PublicKey,
     msg: Vec<u8>,
     sig: Signature,
 }
 
-impl FalconNTTVerificationCircuit {
+impl FalconDualNTTVerificationCircuit {
     pub fn build_circuit(pk: PublicKey, msg: Vec<u8>, sig: Signature) -> Self {
         Self { pk, msg, sig }
     }
 }
 
-impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
+impl<F: PrimeField> ConstraintSynthesizer<F> for FalconDualNTTVerificationCircuit {
     /// generate a circuit proving that for a given tuple: pk, msg, sig
     /// the following statement holds
     /// - hm = hash_message(message, nonce)     <- done in public
     /// - v = hm - sig * pk
     /// - l2_norm(sig, v) < SIG_L2_BOUND = 34034726
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<()> {
-        let sig_poly: Polynomial = (&self.sig).into();
+        let sig_poly: DualPolynomial = (&self.sig).into();
         let pk_poly: Polynomial = (&self.pk).into();
 
         // the [q, 2*q^2, 4 * q^3, ..., 2^9 * q^10] constant wires
@@ -45,8 +45,10 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         let hm_ntt = NTTPolynomial::from(&hm);
 
         // compute v = hm - uh and lift it to positives
-        let uh = sig_poly * pk_poly;
-        let v = hm - uh;
+        let uh_pos = sig_poly.pos * pk_poly;
+        let uh_neg = sig_poly.neg * pk_poly;
+        let v = hm - uh_pos + uh_neg;
+        let v_dual = DualPolynomial::from(&v);
 
         let pk_ntt = NTTPolynomial::from(&pk_poly);
 
@@ -56,7 +58,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // signature, over Z
         //  a private input to the circuit; a range proof will be done later
         let sig_poly_vars =
-            PolyVar::<F>::alloc_vars(cs.clone(), &sig_poly, AllocationMode::Witness)?;
+            DualPolyVar::<F>::alloc_vars(cs.clone(), &sig_poly, AllocationMode::Witness)?;
 
         // pk, in NTT domain
         //  a public input to the circuit; do not need range proof
@@ -68,13 +70,8 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
 
         // v := hm - sig * pk, over Z
         //  a private input to the circuit; require a range proof
-        let v_vars = PolyVar::<F>::alloc_vars(cs.clone(), &v, AllocationMode::Witness)?;
+        let v_vars = DualPolyVar::<F>::alloc_vars(cs.clone(), &v_dual, AllocationMode::Witness)?;
 
-        for e in v_vars.coeff() {
-            // ensure all the v inputs are smaller than MODULUS
-            // v will need to be kept secret
-            enforce_less_than_q(cs.clone(), &e)?;
-        }
         // ========================================
         // proving v = hm + sig * pk mod MODULUS
         // ========================================
@@ -85,28 +82,37 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // NTT representation of the polynomial
         //  sig_ntt_vars = ntt_circuit(sig_vars)
         //  v_ntt_vars = ntt_circuit(v_vars)
-        let sig_ntt_vars =
-            ntt_circuit(cs.clone(), &sig_poly_vars, &const_q_power_vars, &param_vars)?;
-        let v_ntt_vars = ntt_circuit(cs.clone(), &v_vars, &const_q_power_vars, &param_vars)?;
+        let sig_ntt_vars = DualNTTPolyVar::ntt_circuit(
+            cs.clone(),
+            &sig_poly_vars,
+            &const_q_power_vars,
+            &param_vars,
+        )?;
+        let v_ntt_vars =
+            DualNTTPolyVar::ntt_circuit(cs.clone(), &v_vars, &const_q_power_vars, &param_vars)?;
 
         // second, prove the equation holds in the ntt domain
         for i in 0..N {
             // hm[i] = v[i] + sig[i] * pk[i] % MODULUS
-
-            // println!(
-            //     "{:?} {:?} {:?} {:?}",
-            //     v_ntt_vars[i].value()?.into_repr(),
-            //     hm_ntt_vars[i].value()?.into_repr(),
-            //     sig_ntt_vars[i].value()?.into_repr(),
-            //     pk_ntt_vars[i].value()?.into_repr(),
-            // );
-
-            hm_ntt_vars.coeff()[i].enforce_equal(&add_mod(
+            // which becomes
+            // hm[i] + v_neg[i] + sig_neg[i] * pk[i] % MODULUS
+            //       = v_pos[i] + sig_pos[i] * pk[i] % MODULUS
+            let left = mod_q(
                 cs.clone(),
-                &v_ntt_vars.coeff()[i],
-                &(&sig_ntt_vars.coeff()[i] * &pk_ntt_vars.coeff()[i]),
+                &(&hm_ntt_vars.coeff()[i]
+                    + &v_ntt_vars.neg.coeff()[i]
+                    + &sig_ntt_vars.neg.coeff()[i] * &pk_ntt_vars.coeff()[i]),
                 &const_q_power_vars[0],
-            )?)?;
+            )?;
+
+            let right = mod_q(
+                cs.clone(),
+                &(&v_ntt_vars.pos.coeff()[i]
+                    + &sig_ntt_vars.pos.coeff()[i] * &pk_ntt_vars.coeff()[i]),
+                &const_q_power_vars[0],
+            )?;
+
+            left.enforce_equal(&right)?;
         }
 
         // ========================================
@@ -114,7 +120,13 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // ========================================
         let l2_norm_var = l2_norm_var(
             cs.clone(),
-            &[v_vars.coeff(), sig_poly_vars.coeff()].concat(),
+            &[
+                v_vars.pos.coeff(),
+                v_vars.neg.coeff(),
+                sig_poly_vars.pos.coeff(),
+                sig_poly_vars.neg.coeff(),
+            ]
+            .concat(),
             &const_q_power_vars[0],
         )?;
 
@@ -141,7 +153,7 @@ mod tests {
 
         let cs = ConstraintSystem::<Fq>::new_ref();
 
-        let falcon_circuit = FalconNTTVerificationCircuit {
+        let falcon_circuit = FalconDualNTTVerificationCircuit {
             pk: keypair.public_key,
             msg: message.to_vec(),
             sig,
