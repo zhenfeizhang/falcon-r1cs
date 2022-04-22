@@ -6,10 +6,10 @@ use falcon_rust::{NTTPolynomial, Polynomial, LOG_N, N};
 use std::ops::{Add, Mul};
 
 #[derive(Debug, Clone)]
-pub struct NTTPolyVar<F: PrimeField>(pub(crate) Vec<FpVar<F>>);
+pub struct NTTPolyVar<F: PrimeField>(pub Vec<FpVar<F>>);
 
 #[derive(Debug, Clone)]
-pub struct PolyVar<F: PrimeField>(pub(crate) Vec<FpVar<F>>);
+pub struct PolyVar<F: PrimeField>(pub Vec<FpVar<F>>);
 
 impl<F: PrimeField> Add for NTTPolyVar<F> {
     type Output = Self;
