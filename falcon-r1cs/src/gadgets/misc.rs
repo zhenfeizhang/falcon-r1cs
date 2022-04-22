@@ -49,6 +49,21 @@ pub fn l2_norm_var<F: PrimeField>(
 
     Ok(res)
 }
+
+// compute the l2 norm of polynomial a where a's coefficients
+// are positive between [0, 6144).
+pub fn l2_norm_var_without_range_check<F: PrimeField>(
+    input: &[FpVar<F>],
+) -> Result<FpVar<F>, SynthesisError> {
+    let mut res = &input[0] * &input[0];
+
+    for e in input.iter().skip(1) {
+        res += e * e
+    }
+
+    Ok(res)
+}
+
 pub fn ntt_param_var<F: PrimeField>(
     cs: ConstraintSystemRef<F>,
 ) -> Result<Vec<FpVar<F>>, SynthesisError> {

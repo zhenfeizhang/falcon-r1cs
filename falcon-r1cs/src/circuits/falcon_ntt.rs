@@ -85,9 +85,10 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconNTTVerificationCircuit {
         // NTT representation of the polynomial
         //  sig_ntt_vars = ntt_circuit(sig_vars)
         //  v_ntt_vars = ntt_circuit(v_vars)
-        let sig_ntt_vars =NTTPolyVar::
-            ntt_circuit(cs.clone(), &sig_poly_vars, &const_q_power_vars, &param_vars)?;
-        let v_ntt_vars = NTTPolyVar::ntt_circuit(cs.clone(), &v_vars, &const_q_power_vars, &param_vars)?;
+        let sig_ntt_vars =
+            NTTPolyVar::ntt_circuit(cs.clone(), &sig_poly_vars, &const_q_power_vars, &param_vars)?;
+        let v_ntt_vars =
+            NTTPolyVar::ntt_circuit(cs.clone(), &v_vars, &const_q_power_vars, &param_vars)?;
 
         // second, prove the equation holds in the ntt domain
         for i in 0..N {

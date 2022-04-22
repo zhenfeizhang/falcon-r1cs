@@ -95,7 +95,8 @@ fn count_ntt_conversion_constraints() {
     let num_witness_variables = cs.num_witness_variables();
     let num_constraints = cs.num_constraints();
 
-    let output_var = NTTPolyVar::ntt_circuit(cs.clone(), &poly_var, &const_mod_q_vars, &param_var).unwrap();
+    let output_var =
+        NTTPolyVar::ntt_circuit(cs.clone(), &poly_var, &const_mod_q_vars, &param_var).unwrap();
     println!(
         "ntt conversion:               {:8} |       {:8} |          {:8} |",
         cs.num_instance_variables() - num_instance_variables,
@@ -110,7 +111,6 @@ fn count_ntt_conversion_constraints() {
         )
     }
 }
-
 
 fn count_verify_with_dual_ntt_constraints() {
     let keypair = KeyPair::keygen();
@@ -136,4 +136,3 @@ fn count_verify_with_dual_ntt_constraints() {
 
     assert!(cs.is_satisfied().unwrap());
 }
-

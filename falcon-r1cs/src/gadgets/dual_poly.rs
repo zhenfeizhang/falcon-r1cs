@@ -17,10 +17,17 @@ impl<F: PrimeField> DualPolyVar<F> {
         dual_poly: &DualPolynomial,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
-        Ok(Self {
-            pos: PolyVar::<F>::alloc_vars(cs.clone(), &dual_poly.pos, mode)?,
-            neg: PolyVar::<F>::alloc_vars(cs.clone(), &dual_poly.neg, mode)?,
-        })
+        let pos = PolyVar::<F>::alloc_vars(cs.clone(), &dual_poly.pos, mode)?;
+        let neg = PolyVar::<F>::alloc_vars(cs.clone(), &dual_poly.neg, mode)?;
+
+        // we want to ensure that for each index i, either pos[i] or neg[i] is zero
+        let mut acc = &pos.coeff()[0] * &neg.coeff()[0];
+        for (p, n) in pos.coeff().iter().zip(neg.coeff().iter()).skip(1) {
+            acc += p * n;
+        }
+        acc.is_zero()?.enforce_equal(&Boolean::TRUE)?;
+
+        Ok(Self { pos, neg })
     }
 }
 

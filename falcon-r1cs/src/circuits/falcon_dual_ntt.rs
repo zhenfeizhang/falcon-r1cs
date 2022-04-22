@@ -118,8 +118,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconDualNTTVerificationCircui
         // ========================================
         // proving l2_norm(v | sig) < 34034726
         // ========================================
-        let l2_norm_var = l2_norm_var(
-            cs.clone(),
+        let l2_norm_var = l2_norm_var_without_range_check(
             &[
                 v_vars.pos.coeff(),
                 v_vars.neg.coeff(),
@@ -127,7 +126,6 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for FalconDualNTTVerificationCircui
                 sig_poly_vars.neg.coeff(),
             ]
             .concat(),
-            &const_q_power_vars[0],
         )?;
 
         enforce_less_than_norm_bound(cs, &l2_norm_var)
