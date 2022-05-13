@@ -1,6 +1,9 @@
 Falcon R1CS
 -----
 
+**THIS REPO IS INTEGRATED INTO [FALCON.RS](https://github.com/zhenfeizhang/falcon.rs); will not be maintained**
+
+
 This crate generates the R1CS circuit for Falcon signature verifications.
 
 # Build
